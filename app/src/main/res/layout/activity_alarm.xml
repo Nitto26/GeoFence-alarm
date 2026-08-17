@@ -33,31 +33,51 @@
 
     <TextView
         android:id="@+id/tvSubtext"
-        android:layout_width="wrap_content"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_marginStart="24dp"
+        android:layout_marginEnd="24dp"
         android:layout_marginTop="8dp"
         android:text="Destination Reached!"
         android:textColor="#FFFFFF"
-        android:textSize="20sp"
-        app:layout_constraintBottom_toTopOf="@+id/btnStopAlarm"
+        android:textSize="18sp"
+        android:gravity="center"
+        app:layout_constraintBottom_toTopOf="@+id/btnTurnOnLocation"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/tvWakeUp" />
 
     <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnStopAlarm"
-        android:layout_width="250dp"
-        android:layout_height="80dp"
-        android:layout_marginTop="64dp"
-        android:text="STOP ALARM"
+        android:id="@+id/btnTurnOnLocation"
+        android:layout_width="280dp"
+        android:layout_height="64dp"
+        android:layout_marginTop="32dp"
+        android:text="TURN ON LOCATION"
         android:textColor="#FFFFFF"
-        android:textSize="24sp"
+        android:textSize="18sp"
         android:textStyle="bold"
-        app:backgroundTint="#F44336"
-        app:cornerRadius="40dp"
-        app:layout_constraintBottom_toBottomOf="parent"
+        android:visibility="gone"
+        app:backgroundTint="#4CAF50"
+        app:cornerRadius="32dp"
+        app:layout_constraintBottom_toTopOf="@+id/btnStopAlarm"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/tvSubtext" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnStopAlarm"
+        android:layout_width="250dp"
+        android:layout_height="64dp"
+        android:layout_marginTop="16dp"
+        android:text="STOP ALARM"
+        android:textColor="#FFFFFF"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        app:backgroundTint="#F44336"
+        app:cornerRadius="32dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/btnTurnOnLocation" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

@@ -1,13 +1,17 @@
 package com.example.geoalarm
 
 import android.Manifest
+import android.app.ActivityOptions
+import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.os.Build
 import android.os.IBinder
 import android.os.Looper
@@ -20,12 +24,10 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
-import android.content.IntentFilter
-import android.location.LocationManager
 
 class RadarService : Service() {
-    private val locationStateReceiver = LocationStateReceiver()
 
+    private val locationStateReceiver = LocationStateReceiver()
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationCallback: LocationCallback
 
@@ -33,8 +35,23 @@ class RadarService : Service() {
         super.onCreate()
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
-        // Dynamically listen for GPS toggles while radar is active
-        registerReceiver(locationStateReceiver, IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION))
+        // Dynamically register the location state receiver so it receives GPS state changes
+        // even when the app is in the background or minimized!
+        try {
+            val filter = IntentFilter().apply {
+                addAction(LocationManager.PROVIDERS_CHANGED_ACTION)
+                addAction("android.location.MODE_CHANGED")
+            }
+            ContextCompat.registerReceiver(
+                this,
+                locationStateReceiver,
+                filter,
+                ContextCompat.RECEIVER_EXPORTED
+            )
+            Log.d("RadarService", "LocationStateReceiver dynamically registered in Foreground Service")
+        } catch (e: Exception) {
+            Log.e("RadarService", "Failed to register receiver: ${e.message}")
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -45,66 +62,51 @@ class RadarService : Service() {
 
     private fun startForegroundNotification() {
         val channelId = "RADAR_CHANNEL"
+        val manager = getSystemService(NotificationManager::class.java)
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                channelId, "Active Radar", NotificationManager.IMPORTANCE_LOW
-            )
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(channel)
+            val existing = manager.getNotificationChannel(channelId)
+            if (existing == null) {
+                val channel = NotificationChannel(
+                    channelId,
+                    "GeoAlarm Tracking Service",
+                    NotificationManager.IMPORTANCE_LOW
+                )
+                manager.createNotificationChannel(channel)
+            }
         }
 
+        val openAppIntent = Intent(this, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, openAppIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         val notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("GeoAlarm Tracking")
-            .setContentText("Approaching destination...")
+            .setContentTitle("GeoAlarm is Active")
+            .setContentText("Monitoring location for your destination...")
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
             .build()
 
         startForeground(1, notification)
     }
 
     private fun fireFullScreenAlarm() {
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channelId = "ALARM_BYPASS_CHANNEL"
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                channelId, "Alarm Triggers", NotificationManager.IMPORTANCE_HIGH
-            )
-            notificationManager.createNotificationChannel(channel)
-        }
-
-        val uniqueId = System.currentTimeMillis().toInt()
-        val fullScreenIntent = Intent(this, AlarmActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-        }
-
-        val fullScreenPendingIntent = PendingIntent.getActivity(
-            this, uniqueId,
-            fullScreenIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val notificationBuilder = NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(android.R.drawable.ic_dialog_alert)
-            .setContentTitle("Destination Reached!")
-            .setContentText("Wake up!")
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
-            .setFullScreenIntent(fullScreenPendingIntent, true) // THIS is what bypasses the block
-
-        notificationManager.notify(uniqueId, notificationBuilder.build())
+        Log.e("RadarService", "Destination reached! Triggering AlarmController...")
+        AlarmController.triggerAlarm(this, isSabotage = false)
     }
 
     private fun startActiveRadar() {
-        // Read coordinates
         val prefs = getSharedPreferences("GeoPrefs", Context.MODE_PRIVATE)
         val targetLat = prefs.getFloat("TARGET_LAT", 0f).toDouble()
         val targetLng = prefs.getFloat("TARGET_LNG", 0f).toDouble()
 
-        // READ THE SLIDER RADIUS: Fetch the dynamic value we saved in MainActivity (defaults to 500m)
         val alarmPrefs = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
         val dynamicTriggerRadius = alarmPrefs.getFloat("TARGET_RADIUS", 500f).toDouble()
 
-        if (targetLat == 0.0) { stopSelf(); return }
+        if (targetLat == 0.0) return
 
         val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2000).build()
 
@@ -120,23 +122,20 @@ class RadarService : Service() {
                     val distance = results[0]
                     Log.d("RadarService", "Distance: ${distance.toInt()}m | Trigger at: ${dynamicTriggerRadius.toInt()}m")
 
-                    // THE FIX: Trigger when distance breaches the slider's radius
                     if (distance <= dynamicTriggerRadius) {
                         Log.e("RadarService", "${dynamicTriggerRadius.toInt()}M RADIUS BREACHED! FIRING ALARM!")
-
-                        // 1. Fire the Full-Screen Intent Bypass
                         fireFullScreenAlarm()
-
-                        // 2. Kill the Radar to save battery
                         fusedLocationClient.removeLocationUpdates(this)
-                        stopForeground(STOP_FOREGROUND_REMOVE) // Updated for newer Android versions
+                        stopForeground(STOP_FOREGROUND_REMOVE)
                         stopSelf()
                     }
                 }
             }
         }
 
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
             fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper())
         }
     }
@@ -148,8 +147,10 @@ class RadarService : Service() {
         if (::locationCallback.isInitialized) {
             fusedLocationClient.removeLocationUpdates(locationCallback)
         }
-
-        // Clean up the receiver
-        unregisterReceiver(locationStateReceiver)
+        try {
+            unregisterReceiver(locationStateReceiver)
+        } catch (e: Exception) {
+            Log.e("RadarService", "Receiver unregister error: ${e.message}")
+        }
     }
 }
