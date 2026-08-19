@@ -8,17 +8,25 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.graphics.Typeface
 import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.util.Log
+import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.GridLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.RelativeLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import android.widget.ViewFlipper
@@ -30,6 +38,7 @@ import androidx.cardview.widget.CardView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.geoalarm.network.ApiClient
+import com.example.geoalarm.network.EventReporter
 import com.example.geoalarm.network.JobItem
 import com.google.android.gms.common.api.ResolvableApiException
 import com.google.android.gms.location.Geofence
@@ -46,12 +55,17 @@ import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.LatLngBounds
+import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.gms.maps.model.PolygonOptions
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
@@ -78,6 +92,38 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     // Live Jobs from Admin Panel Backend
     private var liveJobs: List<JobItem> = emptyList()
+
+    // Map Markers Cache
+    private val worksiteMarkers = mutableMapOf<String, Marker>()
+    private var accommodationMarker: Marker? = null
+
+    // Accommodation Location
+    private val accommodationLatLng = LatLng(10.5182, 76.2090)
+
+    // Handlers for Clock and Timer
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var startTimeMillis = System.currentTimeMillis() - (5 * 3600 * 1000 + 42 * 60000 + 18000) // Mock 5h 42m 18s already worked
+
+    // Live Clock Ticker Runnable
+    private val clockTicker = object : Runnable {
+        override fun run() {
+            // Update Home Current Time Clock
+            val tvTime = findViewById<TextView>(R.id.tvLiveCurrentTime)
+            tvTime?.text = SimpleDateFormat("hh:mm:ss a", Locale.getDefault()).format(Date())
+
+            // Update Hours Worked Shift Timer
+            val tvTimer = findViewById<TextView>(R.id.tvHoursWorkedTimer)
+            if (tvTimer != null) {
+                val elapsed = System.currentTimeMillis() - startTimeMillis
+                val hours = elapsed / 3600000
+                val minutes = (elapsed % 3600000) / 60000
+                val seconds = (elapsed % 60000) / 1000
+                tvTimer.text = String.format("%02dh %02dm %02ds", hours, minutes, seconds)
+            }
+
+            mainHandler.postDelayed(this, 1000)
+        }
+    }
 
     // OS Level Sabotage & Geofence Engine
     private val locationStateReceiver = LocationStateReceiver()
@@ -131,6 +177,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         setupHomeInteractions()
         setupProfileInteractions()
         setupWorkCalendar()
+        setupMapDetailsCard()
 
         // Initialize Google Maps fragment
         val mapFragment = supportFragmentManager.findFragmentById(R.id.mapFragment) as? SupportMapFragment
@@ -156,10 +203,12 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 filter,
                 ContextCompat.RECEIVER_EXPORTED
             )
-            Log.d(TAG, "LocationStateReceiver registered with RECEIVER_EXPORTED")
         } catch (e: Exception) {
             Log.e(TAG, "Receiver registration error: ${e.message}")
         }
+
+        // Start Live Clock and Shift Timer
+        mainHandler.post(clockTicker)
 
         // Fetch Live Jobs from Admin Panel Backend
         fetchLiveJobsFromBackend()
@@ -173,24 +222,27 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             try {
                 Log.d(TAG, "Connecting to backend at: ${ApiClient.getBaseUrl()}api/mobile/jobs...")
                 val response = ApiClient.apiService.getJobs(workerId = "WORKER-1001")
-                if (response.isSuccessful) {
-                    val jobs = response.body()?.jobs ?: emptyList()
-                    liveJobs = jobs
-                    Log.d(TAG, "✓ Received ${jobs.size} jobs from Admin Panel!")
-
-                    withContext(Dispatchers.Main) {
+                
+                withContext(Dispatchers.Main) {
+                    if (response.isSuccessful) {
+                        val jobs = response.body()?.jobs ?: emptyList()
+                        liveJobs = jobs
+                        EventReporter.addLocalLog("Schedule fetched successfully (${jobs.size} jobs)")
                         updateHomeUiWithLiveJobs(jobs)
+                        updateWorkCalendarWithJobs(jobs)
                         if (isMapReady) {
                             renderJobsOnMap(jobs)
                         }
+                    } else {
+                        EventReporter.addLocalLog("Failed to fetch schedule (HTTP ${response.code()})")
+                        Toast.makeText(this@MainActivity, "Server connection failed", Toast.LENGTH_SHORT).show()
                     }
-                } else {
-                    Log.e(TAG, "Failed to fetch jobs: ${response.code()}")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error connecting to Admin Panel: ${e.message}")
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Connected to backend (${liveJobs.size} jobs)", Toast.LENGTH_SHORT).show()
+                    EventReporter.addLocalLog("Failed to fetch schedule: ${e.message}")
+                    Toast.makeText(this@MainActivity, "Offline Mode", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -214,34 +266,49 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     // ==========================================
-    // SERVER SETTINGS CONFIGURATION DIALOG
+    // NOTIFICATION BELL: SYSTEM LOGS DIALOG
     // ==========================================
-    private fun showServerSettingsDialog() {
-        val currentUrl = ApiClient.getBaseUrl()
-        val input = EditText(this).apply {
-            setText(currentUrl)
-            hint = "e.g. http://192.168.1.50:8000/ or http://10.0.2.2:8000/"
-            setPadding(40, 30, 40, 30)
+    private fun showLiveLogsDialog() {
+        val context = this
+        val logs = EventReporter.liveSystemLogs
+
+        val builder = AlertDialog.Builder(context)
+        builder.setTitle("⚡ System Logs & Activity")
+
+        val scrollView = ScrollView(context)
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(32, 32, 32, 32)
         }
 
-        AlertDialog.Builder(this)
-            .setTitle("Admin Panel Server URL")
-            .setMessage("Set the backend URL to connect your mobile app with the Admin Panel:")
-            .setView(input)
-            .setPositiveButton("Save & Connect") { _, _ ->
-                val newUrl = input.text.toString().trim()
-                if (newUrl.isNotEmpty()) {
-                    ApiClient.setBaseUrl(this, newUrl)
-                    Toast.makeText(this, "Connecting to: $newUrl", Toast.LENGTH_SHORT).show()
-                    fetchLiveJobsFromBackend()
+        if (logs.isEmpty()) {
+            container.addView(TextView(context).apply {
+                text = "No system logs recorded yet."
+                textSize = 14f
+                setPadding(0, 16, 0, 16)
+            })
+        } else {
+            for (log in logs) {
+                val logItem = TextView(context).apply {
+                    text = log
+                    textSize = 12.5f
+                    typeface = Typeface.MONOSPACE
+                    setPadding(0, 8, 0, 8)
+                    setTextColor(if (log.contains("⚠") || log.contains("location_off")) Color.parseColor("#E11D48") else Color.parseColor("#334155"))
                 }
+                container.addView(logItem)
             }
-            .setNeutralButton("Reset Default") { _, _ ->
-                ApiClient.setBaseUrl(this, ApiClient.DEFAULT_BASE_URL)
-                fetchLiveJobsFromBackend()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+        }
+
+        scrollView.addView(container)
+        builder.setView(scrollView)
+        builder.setPositiveButton("Close", null)
+        builder.setNeutralButton("Clear Logs") { _, _ ->
+            EventReporter.liveSystemLogs.clear()
+            EventReporter.addLocalLog("Logs cleared.")
+            Toast.makeText(context, "Logs Cleared", Toast.LENGTH_SHORT).show()
+        }
+        builder.show()
     }
 
     // ==========================================
@@ -325,9 +392,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private fun setupHomeInteractions() {
         val btnViewOnMapLink = findViewById<LinearLayout>(R.id.btnViewOnMapLink)
         val btnNextWorksiteArrow = findViewById<FrameLayout>(R.id.btnNextWorksiteArrow)
-        val cardWorksite1 = findViewById<CardView>(R.id.cardWorksite1)
-        val cardWorksite2 = findViewById<CardView>(R.id.cardWorksite2)
-        val cardWorksite3 = findViewById<CardView>(R.id.cardWorksite3)
+        val btnGoToMap = findViewById<MaterialButton>(R.id.btnGoToMap)
         val ivBell = findViewById<ImageView>(R.id.ivNotificationBell)
 
         val goToMapAction = View.OnClickListener {
@@ -336,18 +401,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         btnViewOnMapLink?.setOnClickListener(goToMapAction)
         btnNextWorksiteArrow?.setOnClickListener(goToMapAction)
-        cardWorksite1?.setOnClickListener(goToMapAction)
-        cardWorksite2?.setOnClickListener(goToMapAction)
-        cardWorksite3?.setOnClickListener(goToMapAction)
+        btnGoToMap?.setOnClickListener(goToMapAction)
 
-        // Notification Bell opens Server Settings
+        // Notification Bell Click triggers logs dialog
         ivBell?.setOnClickListener {
-            showServerSettingsDialog()
+            showLiveLogsDialog()
         }
     }
 
     // ==========================================
-    // SCREEN 3: MAP & GEOFENCE OS ALARM SETUP
+    // SCREEN 3: MAP & SWIPABLE CARDS CAROUSEL
     // ==========================================
     override fun onMapReady(googleMap: GoogleMap) {
         mMap = googleMap
@@ -361,7 +424,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         if (liveJobs.isNotEmpty()) {
             renderJobsOnMap(liveJobs)
         } else {
-            // Fallback default coordinates
             val defaultLoc = LatLng(10.5276, 76.2144)
             mMap?.moveCamera(CameraUpdateFactory.newLatLngZoom(defaultLoc, 15f))
         }
@@ -378,29 +440,39 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             Toast.makeText(this, "Centered Location", Toast.LENGTH_SHORT).show()
         }
 
-        // View Details Button
+        // View Details Button Toggle expand/collapse
         val btnMapDetails = findViewById<MaterialButton>(R.id.btnMapWorksiteDetails)
+        val llExpandedDetails = findViewById<LinearLayout>(R.id.llExpandedDetails)
         btnMapDetails?.setOnClickListener {
-            val jobTitle = if (liveJobs.isNotEmpty()) liveJobs[0].jobId else "Construction Site A"
-            Toast.makeText(this, "$jobTitle: Geofence Active", Toast.LENGTH_SHORT).show()
+            if (llExpandedDetails != null) {
+                if (llExpandedDetails.visibility == View.VISIBLE) {
+                    llExpandedDetails.visibility = View.GONE
+                    btnMapDetails.text = "View Details"
+                } else {
+                    llExpandedDetails.visibility = View.VISIBLE
+                    btnMapDetails.text = "Hide Details"
+                }
+            }
         }
     }
 
     private fun renderJobsOnMap(jobs: List<JobItem>) {
         val map = mMap ?: return
         map.clear()
+        worksiteMarkers.clear()
 
         val boundsBuilder = LatLngBounds.Builder()
         var hasPoints = false
 
-        jobs.forEachIndexed { index, job ->
+        // Plot assigned jobs
+        jobs.forEach { job ->
             val polygonPoints = job.location.map { LatLng(it.latitude, it.longitude) }
 
             if (polygonPoints.isNotEmpty()) {
                 hasPoints = true
                 polygonPoints.forEach { boundsBuilder.include(it) }
 
-                // Draw Real Polygon Geofence from Backend Coordinates
+                // Draw Polygon Geofence Zone
                 if (polygonPoints.size >= 3) {
                     map.addPolygon(
                         PolygonOptions()
@@ -411,32 +483,128 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     )
                 }
 
-                // Add Marker at First Vertex / Center
+                // Add Marker Pin
                 val centerPoint = polygonPoints[0]
-                map.addMarker(
+                val marker = map.addMarker(
                     MarkerOptions()
                         .position(centerPoint)
                         .title(job.jobId)
-                        .snippet("Geofence Zone with ${job.location.size} vertices")
                         .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
                 )
+                if (marker != null) {
+                    worksiteMarkers[job.jobId] = marker
+                }
 
-                // Arm OS Geofence for this job
+                // Arm geofence locally
                 armJobGeofence(job.jobId, centerPoint, 500f)
             }
         }
+
+        // Plot Worker Accommodation marker
+        accommodationMarker = map.addMarker(
+            MarkerOptions()
+                .position(accommodationLatLng)
+                .title("Accommodation")
+                .snippet("Block A, Room 203")
+                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ORANGE))
+        )
+        boundsBuilder.include(accommodationLatLng)
 
         if (hasPoints) {
             try {
                 val bounds = boundsBuilder.build()
                 map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 120))
             } catch (e: Exception) {
-                if (jobs.isNotEmpty() && jobs[0].location.isNotEmpty()) {
-                    val first = jobs[0].location[0]
-                    map.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(first.latitude, first.longitude), 15f))
-                }
+                map.moveCamera(CameraUpdateFactory.newLatLngZoom(accommodationLatLng, 14f))
             }
         }
+
+        // Render swipable top carousel cards
+        populateMapCarousel(jobs)
+    }
+
+    private fun populateMapCarousel(jobs: List<JobItem>) {
+        val container = findViewById<LinearLayout>(R.id.llCarouselContainer) ?: return
+        container.removeAllViews()
+
+        jobs.forEachIndexed { index, job ->
+            val cardView = CardView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    setMargins(0, 0, 24, 0)
+                }
+                radius = 12f
+                cardElevation = 2f
+                setContentPadding(16, 12, 16, 12)
+                setCardBackgroundColor(Color.WHITE)
+            }
+
+            val cardLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+            }
+
+            val titleText = TextView(this).apply {
+                text = job.jobId
+                setTextColor(getColor(R.color.text_primary))
+                textSize = 14f
+                setTypeface(null, Typeface.BOLD)
+            }
+
+            val timeText = TextView(this).apply {
+                text = "Time: 10:00 AM - 01:00 PM"
+                setTextColor(getColor(R.color.brand_blue))
+                textSize = 12f
+                setTypeface(null, Typeface.BOLD)
+            }
+
+            val durationText = TextView(this).apply {
+                text = "Duration: 3 hours"
+                setTextColor(getColor(R.color.text_secondary))
+                textSize = 11f
+            }
+
+            cardLayout.addView(titleText)
+            cardLayout.addView(timeText)
+            cardLayout.addView(durationText)
+
+            cardView.addView(cardLayout)
+
+            // Click focuses map camera on job
+            cardView.setOnClickListener {
+                focusOnWorksite(job)
+            }
+
+            container.addView(cardView)
+        }
+    }
+
+    private fun focusOnWorksite(job: JobItem) {
+        if (job.location.isNotEmpty()) {
+            val loc = job.location[0]
+            val latLng = LatLng(loc.latitude, loc.longitude)
+            mMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, 16f))
+            updateBottomCardDetails(job)
+        }
+    }
+
+    private fun updateBottomCardDetails(job: JobItem) {
+        val tvTitle = findViewById<TextView>(R.id.tvMapDetailTitle)
+        val tvTime = findViewById<TextView>(R.id.tvMapDetailTime)
+        val tvRole = findViewById<TextView>(R.id.tvMapDetailRole)
+        val tvSupervisor = findViewById<TextView>(R.id.tvMapDetailSupervisor)
+
+        tvTitle?.text = job.jobId
+        tvTime?.text = "Active Days: " + job.days.joinToString(", ")
+        tvRole?.text = "Role: Electrical Installation"
+        tvSupervisor?.text = "Supervisor: Arun Kumar"
+    }
+
+    private fun setupMapDetailsCard() {
+        // Toggle Expanded panel
+        val detailsContainer = findViewById<LinearLayout>(R.id.llExpandedDetails)
+        detailsContainer?.visibility = View.GONE
     }
 
     private fun armJobGeofence(jobId: String, latLng: LatLng, radius: Float) {
@@ -470,16 +638,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         geofencingClient.addGeofences(geofencingRequest, geofencePendingIntent).run {
             addOnSuccessListener {
-                Log.d(TAG, "OS Geofence armed for $jobId")
+                Log.d(TAG, "Armed Geofence for $jobId")
             }
             addOnFailureListener {
-                Log.e(TAG, "Geofence error for $jobId: ${it.message}")
+                Log.e(TAG, "Geofence error: ${it.message}")
             }
         }
     }
 
     // ==========================================
-    // SCREEN 4: WORK / SCHEDULE
+    // SCREEN 4: WORK / SCHEDULE & CALENDAR
     // ==========================================
     private fun setupWorkCalendar() {
         val ivPrevMonth = findViewById<ImageView>(R.id.ivPrevMonth)
@@ -493,10 +661,104 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
     }
 
+    private fun updateWorkCalendarWithJobs(jobs: List<JobItem>) {
+        val grid = findViewById<GridLayout>(R.id.glCalendarDays) ?: return
+        grid.removeAllViews()
+
+        // Days Off list (Sundays and mock off days)
+        val offDays = setOf(3, 10, 17, 24, 31, 7, 14)
+        // Work Days list
+        val workDays = setOf(1, 2, 5, 8, 12, 15, 18, 20, 22, 25, 29)
+
+        val cal = Calendar.getInstance()
+        val daysInMonth = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
+
+        for (day in 1..daysInMonth) {
+            val frameLayout = FrameLayout(this).apply {
+                layoutParams = GridLayout.LayoutParams().apply {
+                    width = 0
+                    height = 110
+                    columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
+                }
+            }
+
+            val dayText = TextView(this).apply {
+                text = day.toString()
+                textSize = 13f
+                gravity = Gravity.CENTER
+                layoutParams = FrameLayout.LayoutParams(96, 96).apply {
+                    gravity = Gravity.CENTER
+                }
+                setTypeface(null, Typeface.BOLD)
+
+                // Color code dates: Workday (Blue), Off Day (Soft Red), Today (Dark Blue Circle)
+                if (day == 20) {
+                    background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_circle_today)
+                    setTextColor(Color.WHITE)
+                } else if (workDays.contains(day)) {
+                    background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_circle_number)
+                    setTextColor(getColor(R.color.brand_blue))
+                } else if (offDays.contains(day)) {
+                    background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_circle_offday)
+                    setTextColor(Color.parseColor("#EF4444"))
+                } else {
+                    setTextColor(getColor(R.color.text_primary))
+                }
+            }
+
+            frameLayout.addView(dayText)
+
+            // Click listener selects day and updates schedule timeline above dynamically!
+            frameLayout.setOnClickListener {
+                selectCalendarDate(day, workDays.contains(day), offDays.contains(day))
+            }
+
+            grid.addView(frameLayout)
+        }
+    }
+
+    private fun selectCalendarDate(day: Int, isWorkday: Boolean, isOffDay: Boolean) {
+        val tvHeader = findViewById<TextView>(R.id.tvTimelineDateHeader)
+        tvHeader?.text = "Schedule for May $day, 2026"
+
+        val item1 = findViewById<RelativeLayout>(R.id.rlTimelineItem1)
+        val item2 = findViewById<RelativeLayout>(R.id.rlTimelineItem2)
+        val item3 = findViewById<RelativeLayout>(R.id.rlTimelineItem3)
+
+        if (isOffDay) {
+            item1?.visibility = View.GONE
+            item2?.visibility = View.GONE
+            item3?.visibility = View.GONE
+            Toast.makeText(this, "Day Off: No worksites assigned.", Toast.LENGTH_SHORT).show()
+        } else if (isWorkday) {
+            item1?.visibility = View.VISIBLE
+            item2?.visibility = View.VISIBLE
+            item3?.visibility = View.VISIBLE
+            Toast.makeText(this, "Workday: 3 worksites active.", Toast.LENGTH_SHORT).show()
+        } else {
+            item1?.visibility = View.VISIBLE
+            item2?.visibility = View.GONE
+            item3?.visibility = View.GONE
+        }
+    }
+
     // ==========================================
-    // SCREEN 5: PROFILE
+    // SCREEN 5: PROFILE & ACCOMMODATION CLICK
     // ==========================================
     private fun setupProfileInteractions() {
+        val btnProfileAccommodationRow = findViewById<LinearLayout>(R.id.btnProfileAccommodationRow)
+        
+        btnProfileAccommodationRow?.setOnClickListener {
+            // Navigate to Map tab (Tab Index 1)
+            switchTab(1)
+
+            // Focus on accommodation LatLng
+            mMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(accommodationLatLng, 16f))
+            accommodationMarker?.showInfoWindow()
+
+            Toast.makeText(this, "Accommodation focused: Block A, Room 203", Toast.LENGTH_LONG).show()
+        }
+
         val btnLogout = findViewById<MaterialButton>(R.id.btnLogout)
         btnLogout?.setOnClickListener {
             AlertDialog.Builder(this)
@@ -514,7 +776,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     // ==========================================
-    // PERMISSIONS & OS ALARM OVERLAY CHECKS
+    // PERMISSIONS & GPS DETECTIONS
     // ==========================================
     private fun hasLocationPermission(): Boolean {
         val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -549,13 +811,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     private fun checkOverlayAndAlarmPermissions() {
-        // Overlay Permission for Over-Home Screen Alarm
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
             AlertDialog.Builder(this)
                 .setTitle("Permission Needed: Display Over Other Apps")
-                .setMessage(
-                    "To trigger the full-screen alarm immediately when location is turned off or when entering worksites, please enable 'Display over other apps'."
-                )
+                .setMessage("Enable display over other apps for lock screen alerts.")
                 .setPositiveButton("Open Settings") { _, _ ->
                     val intent = Intent(
                         Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
@@ -568,15 +827,12 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             return
         }
 
-        // Full-Screen Intent Permission (Android 14+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             if (!notificationManager.canUseFullScreenIntent()) {
                 AlertDialog.Builder(this)
                     .setTitle("Permission Needed: Full-Screen Alarms")
-                    .setMessage(
-                        "To sound the siren and wake your device over the lock screen, enable 'Allow full-screen intents' in settings."
-                    )
+                    .setMessage("Allow full-screen intents to display warnings on lock screen.")
                     .setPositiveButton("Open Settings") { _, _ ->
                         val intent = Intent(
                             Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
@@ -618,6 +874,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     override fun onDestroy() {
         super.onDestroy()
+        mainHandler.removeCallbacks(clockTicker)
         try {
             unregisterReceiver(locationStateReceiver)
         } catch (e: Exception) {

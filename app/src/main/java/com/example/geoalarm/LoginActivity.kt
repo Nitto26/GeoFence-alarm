@@ -57,8 +57,17 @@ class LoginActivity : AppCompatActivity() {
         // Login Button
         btnLogin.setOnClickListener {
             val serverInput = etServerUrl.text.toString().trim()
+            
+            // Validate URL before configuring Retrofit to prevent crashes
             if (serverInput.isNotEmpty()) {
-                ApiClient.setBaseUrl(this, serverInput)
+                val success = ApiClient.setBaseUrl(this, serverInput)
+                if (!success) {
+                    Toast.makeText(this, "⚠ Please enter a valid Server URL", Toast.LENGTH_LONG).show()
+                    return@setOnClickListener
+                }
+            } else {
+                Toast.makeText(this, "⚠ Server URL cannot be empty", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
             }
 
             btnLogin.isEnabled = false

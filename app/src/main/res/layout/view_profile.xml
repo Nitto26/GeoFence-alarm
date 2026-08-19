@@ -33,16 +33,17 @@
             android:orientation="vertical"
             android:layout_marginTop="28dp">
 
+            <!-- Styled FrameLayout showing Worker Icon instead of plain photo -->
             <FrameLayout
                 android:layout_width="96dp"
                 android:layout_height="96dp"
                 android:background="@drawable/bg_circle_avatar">
 
                 <ImageView
-                    android:layout_width="60dp"
-                    android:layout_height="60dp"
+                    android:layout_width="52dp"
+                    android:layout_height="52dp"
                     android:layout_gravity="center"
-                    android:src="@drawable/ic_person"
+                    android:src="@drawable/ic_badge"
                     app:tint="@color/brand_blue" />
             </FrameLayout>
 
@@ -117,32 +118,38 @@
             </LinearLayout>
             <View android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/divider" />
 
-            <!-- Item 2: Accommodation -->
+            <!-- Item 2: Accommodation (Click to focus on Map) -->
             <LinearLayout
+                android:id="@+id/btnProfileAccommodationRow"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:paddingVertical="14dp">
+                android:paddingVertical="14dp"
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true"
+                android:focusable="true">
 
                 <ImageView
                     android:layout_width="22dp"
                     android:layout_height="22dp"
                     android:src="@drawable/ic_home_outline"
-                    app:tint="@color/text_secondary" />
+                    app:tint="@color/brand_blue" />
 
                 <LinearLayout
-                    android:layout_width="match_parent"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
+                    android:layout_weight="1"
                     android:layout_marginStart="18dp"
                     android:orientation="vertical">
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Accommodation"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
+                        android:text="Accommodation (Tap to view on Map)"
+                        android:textColor="@color/brand_blue"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
 
                     <TextView
                         android:id="@+id/tvProfileAccommodation"
@@ -154,6 +161,12 @@
                         android:textSize="15sp"
                         android:textStyle="bold" />
                 </LinearLayout>
+
+                <ImageView
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
+                    android:src="@drawable/ic_chevron_right"
+                    app:tint="@color/brand_blue" />
             </LinearLayout>
             <View android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/divider" />
 

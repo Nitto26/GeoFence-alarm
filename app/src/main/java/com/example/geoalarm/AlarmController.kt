@@ -125,30 +125,16 @@ object AlarmController {
             val tvWakeUp = view.findViewById<TextView>(R.id.tvWakeUp)
             val tvSubtext = view.findViewById<TextView>(R.id.tvSubtext)
             val btnTurnOnLocation = view.findViewById<Button>(R.id.btnTurnOnLocation)
-            val btnStopAlarm = view.findViewById<Button>(R.id.btnStopAlarm)
 
-            if (isSabotage) {
-                tvWakeUp.text = "LOCATION IS OFF!"
-                tvSubtext.text = "Location service was turned off while alarm is armed!\nTurn it back on to resume tracking."
-                btnTurnOnLocation.visibility = View.VISIBLE
+            tvWakeUp.text = "Location is Off"
+            tvSubtext.text = "Worker Tracker needs your location to automatically track your attendance and keep you safe."
+            btnTurnOnLocation.visibility = View.VISIBLE
 
-                btnTurnOnLocation.setOnClickListener {
-                    val settingsIntent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    context.startActivity(settingsIntent)
+            btnTurnOnLocation.setOnClickListener {
+                val settingsIntent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-            } else {
-                tvWakeUp.text = "WAKE UP"
-                tvSubtext.text = "Destination Reached!"
-                btnTurnOnLocation.visibility = View.GONE
-            }
-
-            btnStopAlarm.setOnClickListener {
-                val sharedPrefs = context.getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
-                sharedPrefs.edit().putBoolean("IS_SYSTEM_ARMED", false).apply()
-
-                stopAlarm(context)
+                context.startActivity(settingsIntent)
             }
 
             windowManager?.addView(view, params)

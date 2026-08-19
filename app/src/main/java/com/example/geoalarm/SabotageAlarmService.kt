@@ -133,9 +133,9 @@ class SabotageAlarmService : Service() {
 
             overlayView?.let { v ->
                 // Configure for sabotage mode
-                v.findViewById<TextView>(R.id.tvWakeUp)?.text = "LOCATION IS OFF!"
+                v.findViewById<TextView>(R.id.tvWakeUp)?.text = "Location is Off"
                 v.findViewById<TextView>(R.id.tvSubtext)?.text =
-                    "Location was turned off while the alarm is armed.\nTurn it back on or stop the alarm."
+                    "Worker Tracker needs your location to automatically track your attendance and keep you safe."
 
                 // Show the "TURN ON LOCATION" button
                 v.findViewById<Button>(R.id.btnTurnOnLocation)?.apply {
@@ -146,14 +146,6 @@ class SabotageAlarmService : Service() {
                         }
                         startActivity(settingsIntent)
                     }
-                }
-
-                // STOP ALARM button — disarms the system and kills this service
-                v.findViewById<Button>(R.id.btnStopAlarm)?.setOnClickListener {
-                    getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
-                        .edit().putBoolean("IS_SYSTEM_ARMED", false).apply()
-                    (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).cancel(999)
-                    stopSelf()
                 }
             }
 

@@ -61,6 +61,9 @@
                 android:layout_height="38dp"
                 android:layout_alignParentEnd="true"
                 android:layout_centerVertical="true"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:clickable="true"
+                android:focusable="true"
                 android:padding="6dp"
                 android:src="@drawable/ic_bell"
                 app:tint="@color/text_primary" />
@@ -117,7 +120,7 @@
             </RelativeLayout>
         </androidx.cardview.widget.CardView>
 
-        <!-- Card 2: ATTENDANCE STATUS -->
+        <!-- Card 2: ATTENDANCE STATUS (Live Clock) -->
         <androidx.cardview.widget.CardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -174,18 +177,81 @@
                         android:layout_marginTop="1dp" />
                 </LinearLayout>
 
+                <!-- Live Current Time Digital Clock -->
                 <TextView
-                    android:id="@+id/tvCheckedInTime"
+                    android:id="@+id/tvLiveCurrentTime"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="9:42 AM"
+                    android:text="08:35:16 PM"
                     android:textColor="@color/text_primary"
                     android:textSize="13sp"
                     android:textStyle="bold" />
             </LinearLayout>
         </androidx.cardview.widget.CardView>
 
-        <!-- Card 3: NEXT WORKSITE -->
+        <!-- Card 3: HOURS WORKED TIMER -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="0dp"
+            app:strokeColor="@color/card_border"
+            app:strokeWidth="1dp"
+            app:cardBackgroundColor="@color/card_bg">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="16dp">
+
+                <!-- Clock Icon -->
+                <ImageView
+                    android:layout_width="34dp"
+                    android:layout_height="34dp"
+                    android:src="@drawable/ic_my_location"
+                    app:tint="@color/brand_blue" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="14dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="TOTAL HOURS WORKED TODAY"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="10sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.04" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Active Shift Duration"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp"
+                        android:layout_marginTop="1dp" />
+                </LinearLayout>
+
+                <!-- Real-Time Counter -->
+                <TextView
+                    android:id="@+id/tvHoursWorkedTimer"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="05h 42m 18s"
+                    android:textColor="@color/brand_blue"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- Card 4: NEXT WORKSITE -->
         <androidx.cardview.widget.CardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -233,7 +299,7 @@
                     android:textSize="14sp"
                     android:textStyle="bold" />
 
-                <!-- Electrical Installation -->
+                <!-- Role Info -->
                 <LinearLayout
                     android:id="@+id/llNextRole"
                     android:layout_width="wrap_content"
@@ -259,7 +325,7 @@
                         android:textSize="13sp" />
                 </LinearLayout>
 
-                <!-- Supervisor -->
+                <!-- Supervisor Info -->
                 <LinearLayout
                     android:id="@+id/llNextSupervisor"
                     android:layout_width="wrap_content"
@@ -330,198 +396,23 @@
             </RelativeLayout>
         </androidx.cardview.widget.CardView>
 
-        <!-- Section: Today's Worksites -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:text="Today's Worksites"
-            android:textColor="@color/text_primary"
-            android:textSize="17sp"
-            android:textStyle="bold" />
-
-        <!-- Worksite Item 1 -->
-        <androidx.cardview.widget.CardView
-            android:id="@+id/cardWorksite1"
+        <!-- Redirect Bottom Action Button: View Worksites on Map -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnGoToMap"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            app:cardCornerRadius="16dp"
-            app:cardElevation="0dp"
-            app:strokeColor="@color/card_border"
-            app:strokeWidth="1dp"
-            app:cardBackgroundColor="@color/card_bg">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:padding="16dp">
-
-                <TextView
-                    android:layout_width="32dp"
-                    android:layout_height="32dp"
-                    android:background="@drawable/bg_circle_number"
-                    android:gravity="center"
-                    android:text="1"
-                    android:textColor="@color/brand_blue"
-                    android:textSize="14sp"
-                    android:textStyle="bold" />
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="14dp"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Construction Site A"
-                        android:textColor="@color/text_primary"
-                        android:textSize="15sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="10:00 AM – 1:00 PM"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
-                </LinearLayout>
-
-                <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:src="@drawable/ic_chevron_right"
-                    app:tint="@color/text_muted" />
-            </LinearLayout>
-        </androidx.cardview.widget.CardView>
-
-        <!-- Worksite Item 2 -->
-        <androidx.cardview.widget.CardView
-            android:id="@+id/cardWorksite2"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            app:cardCornerRadius="16dp"
-            app:cardElevation="0dp"
-            app:strokeColor="@color/card_border"
-            app:strokeWidth="1dp"
-            app:cardBackgroundColor="@color/card_bg">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:padding="16dp">
-
-                <TextView
-                    android:layout_width="32dp"
-                    android:layout_height="32dp"
-                    android:background="@drawable/bg_circle_number"
-                    android:gravity="center"
-                    android:text="2"
-                    android:textColor="@color/brand_blue"
-                    android:textSize="14sp"
-                    android:textStyle="bold" />
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="14dp"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Warehouse Renovation"
-                        android:textColor="@color/text_primary"
-                        android:textSize="15sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="2:00 PM – 5:00 PM"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
-                </LinearLayout>
-
-                <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:src="@drawable/ic_chevron_right"
-                    app:tint="@color/text_muted" />
-            </LinearLayout>
-        </androidx.cardview.widget.CardView>
-
-        <!-- Worksite Item 3 -->
-        <androidx.cardview.widget.CardView
-            android:id="@+id/cardWorksite3"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            app:cardCornerRadius="16dp"
-            app:cardElevation="0dp"
-            app:strokeColor="@color/card_border"
-            app:strokeWidth="1dp"
-            app:cardBackgroundColor="@color/card_bg">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:padding="16dp">
-
-                <TextView
-                    android:layout_width="32dp"
-                    android:layout_height="32dp"
-                    android:background="@drawable/bg_circle_number"
-                    android:gravity="center"
-                    android:text="3"
-                    android:textColor="@color/brand_blue"
-                    android:textSize="14sp"
-                    android:textStyle="bold" />
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="14dp"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Site Office Work"
-                        android:textColor="@color/text_primary"
-                        android:textSize="15sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="5:30 PM – 6:30 PM"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
-                </LinearLayout>
-
-                <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:src="@drawable/ic_chevron_right"
-                    app:tint="@color/text_muted" />
-            </LinearLayout>
-        </androidx.cardview.widget.CardView>
+            android:layout_height="56dp"
+            android:layout_marginTop="28dp"
+            android:text="View All Worksites on Map"
+            android:textColor="#FFFFFF"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:textAllCaps="false"
+            app:backgroundTint="@color/brand_blue"
+            app:cornerRadius="14dp"
+            app:icon="@drawable/ic_map"
+            app:iconGravity="textStart"
+            app:iconPadding="10dp"
+            app:elevation="0dp" />
 
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>

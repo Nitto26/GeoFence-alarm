@@ -56,39 +56,18 @@ class AlarmActivity : AppCompatActivity() {
         val tvWakeUp = findViewById<TextView>(R.id.tvWakeUp)
         val tvSubtext = findViewById<TextView>(R.id.tvSubtext)
         val btnTurnOnLocation = findViewById<Button>(R.id.btnTurnOnLocation)
-        val btnStopAlarm = findViewById<Button>(R.id.btnStopAlarm)
 
-        if (isSabotageMode) {
-            tvWakeUp.text = "LOCATION IS OFF!"
-            tvSubtext.text = "Location was turned off while the alarm is armed!\nTurn it back on to resume tracking."
-            btnTurnOnLocation.visibility = View.VISIBLE
+        // Configure UI texts to match Location warning intent
+        tvWakeUp.text = "Location is Off"
+        tvSubtext.text = "Worker Tracker needs your location to automatically track your attendance and keep you safe."
 
-            btnTurnOnLocation.setOnClickListener {
-                val settingsIntent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
-                startActivity(settingsIntent)
-            }
-        } else {
-            tvWakeUp.text = "WAKE UP"
-            tvSubtext.text = "Destination Reached!"
-            btnTurnOnLocation.visibility = View.GONE
+        btnTurnOnLocation.setOnClickListener {
+            val settingsIntent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+            startActivity(settingsIntent)
         }
 
-        // Trigger alarm controller if not already active
+        // Trigger alarm siren if not already active
         AlarmController.triggerAlarm(this, isSabotageMode)
-
-        btnStopAlarm.setOnClickListener {
-            // Disarm system
-            val sharedPrefs = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
-            sharedPrefs.edit().putBoolean("IS_SYSTEM_ARMED", false).apply()
-
-            // Stop tracking service
-            stopService(Intent(this, RadarService::class.java))
-
-            // Stop alarm controller
-            AlarmController.stopAlarm(this)
-
-            finish()
-        }
 
         // Listen for location being restored
         try {
@@ -109,9 +88,13 @@ class AlarmActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (isSabotageMode) {
-            checkLocationStatusAndDismissIfResolved()
-        }
+        checkLocationStatusAndDismissIfResolved()
+    }
+
+    // Disable back button so the worker cannot bypass the warning alarm screen
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        // Do nothing to prevent dismissing when location is off
     }
 
     private fun isLocationServiceOn(): Boolean {
