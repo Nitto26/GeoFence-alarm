@@ -18,6 +18,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import com.example.geoalarm.network.EventReporter
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
@@ -30,6 +31,7 @@ class RadarService : Service() {
     private val locationStateReceiver = LocationStateReceiver()
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationCallback: LocationCallback
+    private var lastPingTimestamp = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -58,7 +60,7 @@ class RadarService : Service() {
         val hasCoarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
         if (!hasFine && !hasCoarse) {
-            Log.w("RadarService", "Location permissions not granted yet. Cannot start location FGS on Android 14+.")
+            Log.w("RadarService", "Location permissions not granted yet. Cannot start location FGS.")
             stopSelf()
             return START_NOT_STICKY
         }
@@ -130,28 +132,51 @@ class RadarService : Service() {
         val alarmPrefs = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
         val dynamicTriggerRadius = alarmPrefs.getFloat("TARGET_RADIUS", 500f).toDouble()
 
-        if (targetLat == 0.0) return
-
-        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2000).build()
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5000)
+            .setMinUpdateDistanceMeters(10f)
+            .build()
 
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(locationResult: LocationResult) {
                 for (location in locationResult.locations) {
-                    val results = FloatArray(1)
-                    android.location.Location.distanceBetween(
-                        location.latitude, location.longitude,
-                        targetLat, targetLng, results
-                    )
+                    val now = System.currentTimeMillis()
 
-                    val distance = results[0]
-                    Log.d("RadarService", "Distance: ${distance.toInt()}m | Trigger at: ${dynamicTriggerRadius.toInt()}m")
+                    // Periodic Ping Dispatching every 30 seconds to Admin Panel
+                    if (now - lastPingTimestamp >= 30_000L) {
+                        lastPingTimestamp = now
+                        EventReporter.reportEvent(
+                            context = this@RadarService,
+                            eventType = "ping",
+                            jobId = "JOB-1001",
+                            latitude = location.latitude,
+                            longitude = location.longitude
+                        )
+                    }
 
-                    if (distance <= dynamicTriggerRadius) {
-                        Log.e("RadarService", "${dynamicTriggerRadius.toInt()}M RADIUS BREACHED! FIRING ALARM!")
-                        fireFullScreenAlarm()
-                        fusedLocationClient.removeLocationUpdates(this)
-                        stopForeground(STOP_FOREGROUND_REMOVE)
-                        stopSelf()
+                    if (targetLat != 0.0 && targetLng != 0.0) {
+                        val results = FloatArray(1)
+                        android.location.Location.distanceBetween(
+                            location.latitude, location.longitude,
+                            targetLat, targetLng, results
+                        )
+
+                        val distance = results[0]
+                        Log.d("RadarService", "Distance: ${distance.toInt()}m | Trigger at: ${dynamicTriggerRadius.toInt()}m")
+
+                        if (distance <= dynamicTriggerRadius) {
+                            Log.e("RadarService", "${dynamicTriggerRadius.toInt()}M RADIUS BREACHED! FIRING ALARM!")
+                            fireFullScreenAlarm()
+                            EventReporter.reportEvent(
+                                context = this@RadarService,
+                                eventType = "entry",
+                                jobId = "JOB-1001",
+                                latitude = location.latitude,
+                                longitude = location.longitude
+                            )
+                            fusedLocationClient.removeLocationUpdates(this)
+                            stopForeground(STOP_FOREGROUND_REMOVE)
+                            stopSelf()
+                        }
                     }
                 }
             }

@@ -15,6 +15,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
 import android.view.View
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -27,6 +28,9 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.cardview.widget.CardView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import com.example.geoalarm.network.ApiClient
+import com.example.geoalarm.network.JobItem
 import com.google.android.gms.common.api.ResolvableApiException
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingClient
@@ -40,15 +44,21 @@ import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
-import com.google.android.gms.maps.model.CircleOptions
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.LatLngBounds
 import com.google.android.gms.maps.model.MarkerOptions
+import com.google.android.gms.maps.model.PolygonOptions
 import com.google.android.material.button.MaterialButton
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
+    private val TAG = "MainActivity"
+
     private lateinit var viewFlipper: ViewFlipper
-    private lateinit var mMap: GoogleMap
+    private var mMap: GoogleMap? = null
     private var isMapReady = false
 
     // Bottom Nav Tabs
@@ -66,10 +76,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private lateinit var ivNavProfile: ImageView
     private lateinit var tvNavProfile: TextView
 
-    // Sample Worksites
-    private val worksiteA = LatLng(10.5276, 76.2144)
-    private val worksiteB = LatLng(10.5310, 76.2190)
-    private val worksiteC = LatLng(10.5230, 76.2100)
+    // Live Jobs from Admin Panel Backend
+    private var liveJobs: List<JobItem> = emptyList()
 
     // OS Level Sabotage & Geofence Engine
     private val locationStateReceiver = LocationStateReceiver()
@@ -94,23 +102,26 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 enableUserLocation()
                 startRadarServiceSafely()
             } else {
-                Log.e("WorkerTracker", "Location permission denied by user")
+                Log.e(TAG, "Location permission denied by user")
             }
         }
 
     private val resolutionForResult =
         registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
             if (result.resultCode == RESULT_OK) {
-                Log.d("WorkerTracker", "User enabled location services.")
+                Log.d(TAG, "User enabled location services.")
                 enableUserLocation()
             } else {
-                Log.e("WorkerTracker", "User refused location services.")
+                Log.e(TAG, "User refused location services.")
             }
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // Initialize API Client
+        ApiClient.init(this)
 
         geofencingClient = LocationServices.getGeofencingClient(this)
         viewFlipper = findViewById(R.id.viewFlipperMain)
@@ -145,39 +156,92 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 filter,
                 ContextCompat.RECEIVER_EXPORTED
             )
-            Log.d("WorkerTracker", "LocationStateReceiver registered successfully")
+            Log.d(TAG, "LocationStateReceiver registered with RECEIVER_EXPORTED")
         } catch (e: Exception) {
-            Log.e("WorkerTracker", "Receiver registration error: ${e.message}")
+            Log.e(TAG, "Receiver registration error: ${e.message}")
         }
+
+        // Fetch Live Jobs from Admin Panel Backend
+        fetchLiveJobsFromBackend()
     }
 
-    private fun hasLocationPermission(): Boolean {
-        val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        return fine || coarse
-    }
+    // ==========================================
+    // BACKEND INTEGRATION: FETCH JOBS
+    // ==========================================
+    private fun fetchLiveJobsFromBackend() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                Log.d(TAG, "Connecting to backend at: ${ApiClient.getBaseUrl()}api/mobile/jobs...")
+                val response = ApiClient.apiService.getJobs(workerId = "WORKER-1001")
+                if (response.isSuccessful) {
+                    val jobs = response.body()?.jobs ?: emptyList()
+                    liveJobs = jobs
+                    Log.d(TAG, "✓ Received ${jobs.size} jobs from Admin Panel!")
 
-    private fun startRadarServiceSafely() {
-        if (!hasLocationPermission()) return
-        try {
-            val radarServiceIntent = Intent(this, RadarService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(radarServiceIntent)
-            } else {
-                startService(radarServiceIntent)
+                    withContext(Dispatchers.Main) {
+                        updateHomeUiWithLiveJobs(jobs)
+                        if (isMapReady) {
+                            renderJobsOnMap(jobs)
+                        }
+                    }
+                } else {
+                    Log.e(TAG, "Failed to fetch jobs: ${response.code()}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error connecting to Admin Panel: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Connected to backend (${liveJobs.size} jobs)", Toast.LENGTH_SHORT).show()
+                }
             }
-        } catch (e: Exception) {
-            Log.e("WorkerTracker", "Could not start RadarService: ${e.message}")
         }
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        try {
-            unregisterReceiver(locationStateReceiver)
-        } catch (e: Exception) {
-            // Already unregistered
+    private fun updateHomeUiWithLiveJobs(jobs: List<JobItem>) {
+        val tvWorksitesCountToday = findViewById<TextView>(R.id.tvWorksitesCountToday)
+        val tvNextWorksiteTitle = findViewById<TextView>(R.id.tvNextWorksiteTitle)
+        val tvNextWorksiteTime = findViewById<TextView>(R.id.tvNextWorksiteTime)
+
+        tvWorksitesCountToday?.text = "${jobs.size} worksites today"
+
+        if (jobs.isNotEmpty()) {
+            val firstJob = jobs[0]
+            tvNextWorksiteTitle?.text = firstJob.jobId
+            val activeDays = firstJob.days.joinToString(", ")
+            if (activeDays.isNotEmpty()) {
+                tvNextWorksiteTime?.text = "Active: $activeDays"
+            }
         }
+    }
+
+    // ==========================================
+    // SERVER SETTINGS CONFIGURATION DIALOG
+    // ==========================================
+    private fun showServerSettingsDialog() {
+        val currentUrl = ApiClient.getBaseUrl()
+        val input = EditText(this).apply {
+            setText(currentUrl)
+            hint = "e.g. http://192.168.1.50:8000/ or http://10.0.2.2:8000/"
+            setPadding(40, 30, 40, 30)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Admin Panel Server URL")
+            .setMessage("Set the backend URL to connect your mobile app with the Admin Panel:")
+            .setView(input)
+            .setPositiveButton("Save & Connect") { _, _ ->
+                val newUrl = input.text.toString().trim()
+                if (newUrl.isNotEmpty()) {
+                    ApiClient.setBaseUrl(this, newUrl)
+                    Toast.makeText(this, "Connecting to: $newUrl", Toast.LENGTH_SHORT).show()
+                    fetchLiveJobsFromBackend()
+                }
+            }
+            .setNeutralButton("Reset Default") { _, _ ->
+                ApiClient.setBaseUrl(this, ApiClient.DEFAULT_BASE_URL)
+                fetchLiveJobsFromBackend()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     // ==========================================
@@ -238,8 +302,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 ivNavMap.setColorFilter(activeColor)
                 tvNavMap.setTextColor(activeColor)
                 tvNavMap.paint.isFakeBoldText = true
-                if (isMapReady) {
-                    mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(worksiteA, 15f))
+                if (isMapReady && liveJobs.isNotEmpty()) {
+                    renderJobsOnMap(liveJobs)
                 }
             }
             2 -> {
@@ -264,6 +328,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val cardWorksite1 = findViewById<CardView>(R.id.cardWorksite1)
         val cardWorksite2 = findViewById<CardView>(R.id.cardWorksite2)
         val cardWorksite3 = findViewById<CardView>(R.id.cardWorksite3)
+        val ivBell = findViewById<ImageView>(R.id.ivNotificationBell)
 
         val goToMapAction = View.OnClickListener {
             switchTab(1)
@@ -274,6 +339,11 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         cardWorksite1?.setOnClickListener(goToMapAction)
         cardWorksite2?.setOnClickListener(goToMapAction)
         cardWorksite3?.setOnClickListener(goToMapAction)
+
+        // Notification Bell opens Server Settings
+        ivBell?.setOnClickListener {
+            showServerSettingsDialog()
+        }
     }
 
     // ==========================================
@@ -283,96 +353,93 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         mMap = googleMap
         isMapReady = true
 
-        // Configure Map UI
-        mMap.uiSettings.isZoomControlsEnabled = false
-        mMap.uiSettings.isMyLocationButtonEnabled = false
+        mMap?.uiSettings?.isZoomControlsEnabled = false
+        mMap?.uiSettings?.isMyLocationButtonEnabled = false
 
-        // Plot Worksite Markers & Geofence Circles
-        plotWorksiteMarkers()
-
-        // Enable GPS location dot
         enableUserLocation()
 
-        // Move to default worksite A
-        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(worksiteA, 15f))
+        if (liveJobs.isNotEmpty()) {
+            renderJobsOnMap(liveJobs)
+        } else {
+            // Fallback default coordinates
+            val defaultLoc = LatLng(10.5276, 76.2144)
+            mMap?.moveCamera(CameraUpdateFactory.newLatLngZoom(defaultLoc, 15f))
+        }
 
         // GPS Recenter Button
         val fabRecenter = findViewById<CardView>(R.id.fabRecenterLocation)
         fabRecenter?.setOnClickListener {
             enableUserLocation()
             checkLocationSettings()
-            mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(worksiteA, 16f))
-            Toast.makeText(this, "Centered on Current Location", Toast.LENGTH_SHORT).show()
+            if (liveJobs.isNotEmpty() && liveJobs[0].location.isNotEmpty()) {
+                val first = liveJobs[0].location[0]
+                mMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(first.latitude, first.longitude), 16f))
+            }
+            Toast.makeText(this, "Centered Location", Toast.LENGTH_SHORT).show()
         }
 
-        // View Details Button in Bottom Map Card
+        // View Details Button
         val btnMapDetails = findViewById<MaterialButton>(R.id.btnMapWorksiteDetails)
         btnMapDetails?.setOnClickListener {
-            Toast.makeText(this, "Construction Site A: Geofence Active (500m)", Toast.LENGTH_SHORT).show()
+            val jobTitle = if (liveJobs.isNotEmpty()) liveJobs[0].jobId else "Construction Site A"
+            Toast.makeText(this, "$jobTitle: Geofence Active", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun renderJobsOnMap(jobs: List<JobItem>) {
+        val map = mMap ?: return
+        map.clear()
+
+        val boundsBuilder = LatLngBounds.Builder()
+        var hasPoints = false
+
+        jobs.forEachIndexed { index, job ->
+            val polygonPoints = job.location.map { LatLng(it.latitude, it.longitude) }
+
+            if (polygonPoints.isNotEmpty()) {
+                hasPoints = true
+                polygonPoints.forEach { boundsBuilder.include(it) }
+
+                // Draw Real Polygon Geofence from Backend Coordinates
+                if (polygonPoints.size >= 3) {
+                    map.addPolygon(
+                        PolygonOptions()
+                            .addAll(polygonPoints)
+                            .strokeColor(Color.parseColor("#0052CC"))
+                            .fillColor(Color.argb(45, 0, 82, 204))
+                            .strokeWidth(5f)
+                    )
+                }
+
+                // Add Marker at First Vertex / Center
+                val centerPoint = polygonPoints[0]
+                map.addMarker(
+                    MarkerOptions()
+                        .position(centerPoint)
+                        .title(job.jobId)
+                        .snippet("Geofence Zone with ${job.location.size} vertices")
+                        .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
+                )
+
+                // Arm OS Geofence for this job
+                armJobGeofence(job.jobId, centerPoint, 500f)
+            }
         }
 
-        // Arm geofence at Worksite A
-        armWorksiteGeofence(worksiteA, 500f)
+        if (hasPoints) {
+            try {
+                val bounds = boundsBuilder.build()
+                map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 120))
+            } catch (e: Exception) {
+                if (jobs.isNotEmpty() && jobs[0].location.isNotEmpty()) {
+                    val first = jobs[0].location[0]
+                    map.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(first.latitude, first.longitude), 15f))
+                }
+            }
+        }
     }
 
-    private fun plotWorksiteMarkers() {
-        if (!::mMap.isInitialized) return
-
-        mMap.clear()
-
-        // Worksite A: Construction Site A
-        mMap.addMarker(
-            MarkerOptions()
-                .position(worksiteA)
-                .title("Construction Site A")
-                .snippet("10:00 AM – 1:00 PM")
-                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
-        )
-        mMap.addCircle(
-            CircleOptions()
-                .center(worksiteA)
-                .radius(500.0)
-                .strokeColor(Color.parseColor("#0052CC"))
-                .fillColor(Color.argb(35, 0, 82, 204))
-                .strokeWidth(4f)
-        )
-
-        // Worksite B: Warehouse Renovation
-        mMap.addMarker(
-            MarkerOptions()
-                .position(worksiteB)
-                .title("Warehouse Renovation")
-                .snippet("2:00 PM – 5:00 PM")
-                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
-        )
-        mMap.addCircle(
-            CircleOptions()
-                .center(worksiteB)
-                .radius(400.0)
-                .strokeColor(Color.parseColor("#0052CC"))
-                .fillColor(Color.argb(25, 0, 82, 204))
-                .strokeWidth(3f)
-        )
-
-        // Worksite C: Site Office Work
-        mMap.addMarker(
-            MarkerOptions()
-                .position(worksiteC)
-                .title("Site Office Work")
-                .snippet("5:30 PM – 6:30 PM")
-                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
-        )
-        mMap.addCircle(
-            CircleOptions()
-                .center(worksiteC)
-                .radius(300.0)
-                .strokeColor(Color.parseColor("#0052CC"))
-                .fillColor(Color.argb(25, 0, 82, 204))
-                .strokeWidth(3f)
-        )
-    }
-
-    private fun armWorksiteGeofence(latLng: LatLng, radius: Float) {
+    private fun armJobGeofence(jobId: String, latLng: LatLng, radius: Float) {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             return
         }
@@ -389,10 +456,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             .putFloat("TARGET_LNG", latLng.longitude.toFloat())
             .apply()
 
-        val uniqueGeofenceId = "WORKSITE_A_ZONE"
         val geofence = Geofence.Builder()
-            .setRequestId(uniqueGeofenceId)
-            .setCircularRegion(latLng.latitude, latLng.longitude, radius + 1000f)
+            .setRequestId(jobId)
+            .setCircularRegion(latLng.latitude, latLng.longitude, radius + 500f)
             .setExpirationDuration(Geofence.NEVER_EXPIRE)
             .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_EXIT)
             .build()
@@ -404,10 +470,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         geofencingClient.addGeofences(geofencingRequest, geofencePendingIntent).run {
             addOnSuccessListener {
-                Log.d("WorkerTracker", "OS Geofence active for Worksite A")
+                Log.d(TAG, "OS Geofence armed for $jobId")
             }
             addOnFailureListener {
-                Log.e("WorkerTracker", "Geofence registration error: ${it.message}")
+                Log.e(TAG, "Geofence error for $jobId: ${it.message}")
             }
         }
     }
@@ -450,6 +516,26 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     // ==========================================
     // PERMISSIONS & OS ALARM OVERLAY CHECKS
     // ==========================================
+    private fun hasLocationPermission(): Boolean {
+        val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        return fine || coarse
+    }
+
+    private fun startRadarServiceSafely() {
+        if (!hasLocationPermission()) return
+        try {
+            val radarServiceIntent = Intent(this, RadarService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(radarServiceIntent)
+            } else {
+                startService(radarServiceIntent)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Could not start RadarService: ${e.message}")
+        }
+    }
+
     private fun requestPermissions() {
         val permissions = mutableListOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
@@ -517,16 +603,25 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     val intentSenderRequest = IntentSenderRequest.Builder(exception.resolution).build()
                     resolutionForResult.launch(intentSenderRequest)
                 } catch (sendEx: Exception) {
-                    Log.e("WorkerTracker", "Error showing location prompt", sendEx)
+                    Log.e(TAG, "Error showing location prompt", sendEx)
                 }
             }
         }
     }
 
     private fun enableUserLocation() {
-        if (!::mMap.isInitialized) return
+        if (mMap == null) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            mMap.isMyLocationEnabled = true
+            mMap?.isMyLocationEnabled = true
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            unregisterReceiver(locationStateReceiver)
+        } catch (e: Exception) {
+            // Already unregistered
         }
     }
 }
