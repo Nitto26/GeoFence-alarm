@@ -16,15 +16,24 @@ class LocationStateReceiver : BroadcastReceiver() {
         val action = intent.action
         if (action != LocationManager.PROVIDERS_CHANGED_ACTION && action != "android.location.MODE_CHANGED") return
 
+        // 1. Guard Check: Only trigger if worker has explicitly Clocked In
+        val sharedPrefs = context.getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
+        val isClockedIn = sharedPrefs.getBoolean("IS_CLOCKED_IN", false)
+
+        if (!isClockedIn) {
+            Log.d("LocationStateReceiver", "Worker is Clocked Out (Sleep Mode). Ignoring location change.")
+            return
+        }
+
         val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
         val isGpsEnabled = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
         val isNetworkEnabled = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
         val isLocationOn = isGpsEnabled || isNetworkEnabled
 
-        Log.d("LocationStateReceiver", "Location toggle received: action=$action, isLocationOn=$isLocationOn")
+        Log.d("LocationStateReceiver", "Location toggle while Clocked In: action=$action, isLocationOn=$isLocationOn")
 
         if (!isLocationOn) {
-            Log.e("LocationStateReceiver", "Location is OFF! Triggering AlarmController & Dispatching Sabotage Event...")
+            Log.e("LocationStateReceiver", "Location is OFF while Clocked In! Triggering AlarmController & Dispatching Sabotage Event...")
             Handler(Looper.getMainLooper()).post {
                 Toast.makeText(context, "⚠ Location is OFF! Sounding Alarm...", Toast.LENGTH_LONG).show()
             }
@@ -37,7 +46,7 @@ class LocationStateReceiver : BroadcastReceiver() {
                 eventType = "location_service_off"
             )
         } else {
-            Log.d("LocationStateReceiver", "Location is ON. Stopping AlarmController & Dispatching Restored Event...")
+            Log.d("LocationStateReceiver", "Location restored. Stopping AlarmController & Dispatching Restored Event...")
             // 1. Stop siren
             AlarmController.stopAlarm(context)
 

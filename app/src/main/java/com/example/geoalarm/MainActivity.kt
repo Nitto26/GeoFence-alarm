@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.location.LocationManager
@@ -100,25 +101,32 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     // Accommodation Location
     private val accommodationLatLng = LatLng(10.5182, 76.2090)
 
-    // Handlers for Clock and Timer
+    // Handlers for Clock and Shift Timer
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var startTimeMillis = System.currentTimeMillis() - (5 * 3600 * 1000 + 42 * 60000 + 18000) // Mock 5h 42m 18s already worked
+    private var startTimeMillis = System.currentTimeMillis() - (5 * 3600 * 1000 + 42 * 60000 + 18000)
 
-    // Live Clock Ticker Runnable
+    // Live Clock & Shift Ticker
     private val clockTicker = object : Runnable {
         override fun run() {
-            // Update Home Current Time Clock
+            // 1. Update Home Current Time Clock (always live)
             val tvTime = findViewById<TextView>(R.id.tvLiveCurrentTime)
             tvTime?.text = SimpleDateFormat("hh:mm:ss a", Locale.getDefault()).format(Date())
 
-            // Update Hours Worked Shift Timer
+            // 2. Update Hours Worked Shift Timer (only advances when Clocked In)
+            val sharedPrefs = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
+            val isClockedIn = sharedPrefs.getBoolean("IS_CLOCKED_IN", false)
+
             val tvTimer = findViewById<TextView>(R.id.tvHoursWorkedTimer)
             if (tvTimer != null) {
-                val elapsed = System.currentTimeMillis() - startTimeMillis
-                val hours = elapsed / 3600000
-                val minutes = (elapsed % 3600000) / 60000
-                val seconds = (elapsed % 60000) / 1000
-                tvTimer.text = String.format("%02dh %02dm %02ds", hours, minutes, seconds)
+                if (isClockedIn) {
+                    val elapsed = System.currentTimeMillis() - startTimeMillis
+                    val hours = elapsed / 3600000
+                    val minutes = (elapsed % 3600000) / 60000
+                    val seconds = (elapsed % 60000) / 1000
+                    tvTimer.text = String.format("%02dh %02dm %02ds", hours, minutes, seconds)
+                } else {
+                    tvTimer.text = "00h 00m 00s (Paused)"
+                }
             }
 
             mainHandler.postDelayed(this, 1000)
@@ -146,7 +154,11 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             if (fineGranted || coarseGranted) {
                 checkLocationSettings()
                 enableUserLocation()
-                startRadarServiceSafely()
+                val isClockedIn = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
+                    .getBoolean("IS_CLOCKED_IN", false)
+                if (isClockedIn) {
+                    startRadarServiceSafely()
+                }
             } else {
                 Log.e(TAG, "Location permission denied by user")
             }
@@ -179,6 +191,11 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         setupWorkCalendar()
         setupMapDetailsCard()
 
+        // Sync Clock In / Out UI State from SharedPreferences
+        val isClockedIn = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
+            .getBoolean("IS_CLOCKED_IN", false)
+        updateClockInOutUi(isClockedIn)
+
         // Initialize Google Maps fragment
         val mapFragment = supportFragmentManager.findFragmentById(R.id.mapFragment) as? SupportMapFragment
         mapFragment?.getMapAsync(this)
@@ -186,8 +203,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         // Request runtime permissions
         requestPermissions()
 
-        // If permissions already exist, start Radar service
-        if (hasLocationPermission()) {
+        // Only start background Radar service if worker is actively Clocked In
+        if (isClockedIn && hasLocationPermission()) {
             startRadarServiceSafely()
         }
 
@@ -387,13 +404,14 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     // ==========================================
-    // SCREEN 2: HOME INTERACTIONS
+    // SCREEN 2: HOME INTERACTIONS & CLOCK IN/OUT
     // ==========================================
     private fun setupHomeInteractions() {
         val btnViewOnMapLink = findViewById<LinearLayout>(R.id.btnViewOnMapLink)
         val btnNextWorksiteArrow = findViewById<FrameLayout>(R.id.btnNextWorksiteArrow)
         val btnGoToMap = findViewById<MaterialButton>(R.id.btnGoToMap)
         val ivBell = findViewById<ImageView>(R.id.ivNotificationBell)
+        val btnClockToggle = findViewById<MaterialButton>(R.id.btnClockToggle)
 
         val goToMapAction = View.OnClickListener {
             switchTab(1)
@@ -406,6 +424,131 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         // Notification Bell Click triggers logs dialog
         ivBell?.setOnClickListener {
             showLiveLogsDialog()
+        }
+
+        // Clock In / Clock Out Toggle Button Handler
+        btnClockToggle?.setOnClickListener {
+            handleClockToggle()
+        }
+    }
+
+    private fun handleClockToggle() {
+        val sharedPrefs = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
+        val currentlyClockedIn = sharedPrefs.getBoolean("IS_CLOCKED_IN", false)
+
+        if (!currentlyClockedIn) {
+            // CLOCK IN ACTION
+            if (!hasLocationPermission()) {
+                requestPermissions()
+                Toast.makeText(this, "Location permissions needed to Clock In", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            checkLocationSettings()
+
+            sharedPrefs.edit()
+                .putBoolean("IS_CLOCKED_IN", true)
+                .putBoolean("IS_SYSTEM_ARMED", true)
+                .putLong("CLOCK_IN_TIMESTAMP", System.currentTimeMillis())
+                .apply()
+
+            startTimeMillis = System.currentTimeMillis()
+
+            // 1. Start background RadarService
+            startRadarServiceSafely()
+
+            // 2. Arm Geofences for active jobs
+            if (liveJobs.isNotEmpty()) {
+                liveJobs.forEach { job ->
+                    if (job.location.isNotEmpty()) {
+                        armJobGeofence(job.jobId, LatLng(job.location[0].latitude, job.location[0].longitude), 500f)
+                    }
+                }
+            }
+
+            // 3. Dispatch Clock In event to backend
+            EventReporter.reportEvent(
+                context = this,
+                eventType = "clock_in",
+                jobId = if (liveJobs.isNotEmpty()) liveJobs[0].jobId else "WORKER-1001",
+                latitude = 10.5276,
+                longitude = 76.2144
+            )
+            EventReporter.addLocalLog("✓ Worker Clocked In. Background radar & geofences armed.")
+
+            updateClockInOutUi(true)
+            Toast.makeText(this, "✓ Clocked In! Background tracking active & armed.", Toast.LENGTH_SHORT).show()
+
+        } else {
+            // CLOCK OUT ACTION
+            sharedPrefs.edit()
+                .putBoolean("IS_CLOCKED_IN", false)
+                .putBoolean("IS_SYSTEM_ARMED", false)
+                .apply()
+
+            // 1. Stop background RadarService
+            stopService(Intent(this, RadarService::class.java))
+
+            // 2. Disarm & remove Geofences
+            try {
+                geofencingClient.removeGeofences(geofencePendingIntent)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error removing geofences: ${e.message}")
+            }
+
+            // 3. Stop any ringing alarms
+            AlarmController.stopAlarm(this)
+
+            // 4. Dispatch Clock Out event to backend
+            EventReporter.reportEvent(
+                context = this,
+                eventType = "clock_out",
+                jobId = if (liveJobs.isNotEmpty()) liveJobs[0].jobId else "WORKER-1001",
+                latitude = 10.5276,
+                longitude = 76.2144
+            )
+            EventReporter.addLocalLog("⏸ Worker Clocked Out. System entered sleep mode.")
+
+            updateClockInOutUi(false)
+            Toast.makeText(this, "⏸ Clocked Out. App is now sleeping (Zero background usage).", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun updateClockInOutUi(isClockedIn: Boolean) {
+        val tvAttendanceStatus = findViewById<TextView>(R.id.tvAttendanceStatus)
+        val tvAttendanceSubtitle = findViewById<TextView>(R.id.tvAttendanceSubtitle)
+        val ivAttendanceIcon = findViewById<ImageView>(R.id.ivAttendanceIcon)
+        val btnClockToggle = findViewById<MaterialButton>(R.id.btnClockToggle)
+        val tvHoursWorkedLabel = findViewById<TextView>(R.id.tvHoursWorkedLabel)
+
+        if (isClockedIn) {
+            tvAttendanceStatus?.text = "Clocked In"
+            tvAttendanceStatus?.setTextColor(getColor(R.color.status_green))
+            tvAttendanceSubtitle?.text = "Tracking active • Background armed"
+            ivAttendanceIcon?.setColorFilter(getColor(R.color.status_green))
+
+            btnClockToggle?.text = "Clock Out"
+            btnClockToggle?.setTextColor(Color.parseColor("#DC2626"))
+            btnClockToggle?.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#FEE2E2"))
+            btnClockToggle?.strokeColor = ColorStateList.valueOf(Color.parseColor("#EF4444"))
+            btnClockToggle?.icon = ContextCompat.getDrawable(this, R.drawable.ic_check_circle)
+            btnClockToggle?.iconTint = ColorStateList.valueOf(Color.parseColor("#DC2626"))
+
+            tvHoursWorkedLabel?.text = "Active Shift Duration"
+        } else {
+            tvAttendanceStatus?.text = "Clocked Out"
+            tvAttendanceStatus?.setTextColor(getColor(R.color.text_secondary))
+            tvAttendanceSubtitle?.text = "App is sleeping • No background tracking"
+            ivAttendanceIcon?.setColorFilter(getColor(R.color.text_muted))
+
+            btnClockToggle?.text = "Clock In"
+            btnClockToggle?.setTextColor(Color.WHITE)
+            btnClockToggle?.backgroundTintList = ColorStateList.valueOf(getColor(R.color.brand_blue))
+            btnClockToggle?.strokeColor = ColorStateList.valueOf(getColor(R.color.brand_blue))
+            btnClockToggle?.icon = ContextCompat.getDrawable(this, R.drawable.ic_check_circle)
+            btnClockToggle?.iconTint = ColorStateList.valueOf(Color.WHITE)
+
+            tvHoursWorkedLabel?.text = "Shift Paused (Sleep Mode)"
         }
     }
 
@@ -464,6 +607,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val boundsBuilder = LatLngBounds.Builder()
         var hasPoints = false
 
+        val isClockedIn = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
+            .getBoolean("IS_CLOCKED_IN", false)
+
         // Plot assigned jobs
         jobs.forEach { job ->
             val polygonPoints = job.location.map { LatLng(it.latitude, it.longitude) }
@@ -495,8 +641,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     worksiteMarkers[job.jobId] = marker
                 }
 
-                // Arm geofence locally
-                armJobGeofence(job.jobId, centerPoint, 500f)
+                // Arm geofence only if worker is Clocked In
+                if (isClockedIn) {
+                    armJobGeofence(job.jobId, centerPoint, 500f)
+                }
             }
         }
 
@@ -765,6 +913,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 .setTitle("Log Out")
                 .setMessage("Are you sure you want to log out?")
                 .setPositiveButton("Log Out") { _, _ ->
+                    // Stop background service on logout
+                    stopService(Intent(this, RadarService::class.java))
+                    AlarmController.stopAlarm(this)
+
                     val intent = Intent(this, LoginActivity::class.java)
                     intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                     startActivity(intent)
@@ -785,6 +937,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     private fun startRadarServiceSafely() {
+        val isClockedIn = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
+            .getBoolean("IS_CLOCKED_IN", false)
+        if (!isClockedIn) return
+
         if (!hasLocationPermission()) return
         try {
             val radarServiceIntent = Intent(this, RadarService::class.java)

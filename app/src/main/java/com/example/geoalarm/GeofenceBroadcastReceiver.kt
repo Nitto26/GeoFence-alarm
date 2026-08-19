@@ -12,6 +12,15 @@ import com.google.android.gms.location.GeofencingEvent
 class GeofenceBroadcastReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
+        // 1. Guard Check: Only process geofences if worker is Clocked In
+        val sharedPrefs = context.getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
+        val isClockedIn = sharedPrefs.getBoolean("IS_CLOCKED_IN", false)
+
+        if (!isClockedIn) {
+            Log.d("GeofenceReceiver", "Worker is Clocked Out (Sleep Mode). Ignoring geofence event.")
+            return
+        }
+
         val geofencingEvent = GeofencingEvent.fromIntent(intent) ?: return
 
         if (geofencingEvent.hasError()) {
@@ -30,7 +39,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
             val jobId = geofence.requestId
 
             if (transition == Geofence.GEOFENCE_TRANSITION_ENTER) {
-                Log.d("GeofenceReceiver", "Geofence ENTER: $jobId ($lat, $lng)")
+                Log.d("GeofenceReceiver", "Geofence ENTER while Clocked In: $jobId ($lat, $lng)")
 
                 // Dispatch 'entry' event to Admin Panel
                 EventReporter.reportEvent(
@@ -49,7 +58,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                     context.startService(serviceIntent)
                 }
             } else if (transition == Geofence.GEOFENCE_TRANSITION_EXIT) {
-                Log.d("GeofenceReceiver", "Geofence EXIT: $jobId ($lat, $lng)")
+                Log.d("GeofenceReceiver", "Geofence EXIT while Clocked In: $jobId ($lat, $lng)")
 
                 // Dispatch 'exit' event to Admin Panel
                 EventReporter.reportEvent(

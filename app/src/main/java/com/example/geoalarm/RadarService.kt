@@ -56,6 +56,16 @@ class RadarService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // 1. Guard Check: Only run if worker is explicitly Clocked In
+        val sharedPrefs = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
+        val isClockedIn = sharedPrefs.getBoolean("IS_CLOCKED_IN", false)
+
+        if (!isClockedIn) {
+            Log.w("RadarService", "Worker is Clocked Out. Refusing to run background service.")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         val hasFine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val hasCoarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
@@ -101,7 +111,7 @@ class RadarService : Service() {
 
         val notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("Worker Tracker Active")
-            .setContentText("Monitoring location for worksite geofences...")
+            .setContentText("Clocked In • Monitoring worksite geofences...")
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
@@ -138,6 +148,18 @@ class RadarService : Service() {
 
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(locationResult: LocationResult) {
+                // Ensure worker is still clocked in
+                val isStillClockedIn = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
+                    .getBoolean("IS_CLOCKED_IN", false)
+
+                if (!isStillClockedIn) {
+                    Log.d("RadarService", "Worker Clocked Out detected during location update. Halting.")
+                    fusedLocationClient.removeLocationUpdates(this)
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                    return
+                }
+
                 for (location in locationResult.locations) {
                     val now = System.currentTimeMillis()
 
