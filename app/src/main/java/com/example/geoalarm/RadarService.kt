@@ -1,8 +1,6 @@
 package com.example.geoalarm
 
 import android.Manifest
-import android.app.ActivityOptions
-import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -11,12 +9,14 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.location.LocationManager
 import android.os.Build
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
@@ -36,7 +36,6 @@ class RadarService : Service() {
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
         // Dynamically register the location state receiver so it receives GPS state changes
-        // even when the app is in the background or minimized!
         try {
             val filter = IntentFilter().apply {
                 addAction(LocationManager.PROVIDERS_CHANGED_ACTION)
@@ -55,8 +54,24 @@ class RadarService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForegroundNotification()
-        startActiveRadar()
+        val hasFine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val hasCoarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+        if (!hasFine && !hasCoarse) {
+            Log.w("RadarService", "Location permissions not granted yet. Cannot start location FGS on Android 14+.")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        try {
+            startForegroundNotification()
+            startActiveRadar()
+        } catch (e: SecurityException) {
+            Log.e("RadarService", "SecurityException starting foreground service: ${e.message}")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         return START_STICKY
     }
 
@@ -83,14 +98,23 @@ class RadarService : Service() {
         )
 
         val notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("GeoAlarm is Active")
-            .setContentText("Monitoring location for your destination...")
+            .setContentTitle("Worker Tracker Active")
+            .setContentText("Monitoring location for worksite geofences...")
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .build()
 
-        startForeground(1, notification)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ServiceCompat.startForeground(
+                this,
+                1,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            )
+        } else {
+            startForeground(1, notification)
+        }
     }
 
     private fun fireFullScreenAlarm() {

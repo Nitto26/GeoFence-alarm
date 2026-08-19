@@ -2,4 +2,45 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    
+    <!-- Primary Brand Colors (Matching User Mockups) -->
+    <color name="brand_blue">#0052CC</color>
+    <color name="brand_blue_dark">#0D47A1</color>
+    <color name="brand_blue_light">#EDF5FF</color>
+    <color name="brand_blue_circle">#E0EDFF</color>
+    <color name="brand_blue_circle_text">#0052CC</color>
+    <color name="avatar_bg">#D4E5FF</color>
+
+    <!-- Success & Status Colors -->
+    <color name="status_green">#16A34A</color>
+    <color name="status_green_bg">#DCFCE7</color>
+    <color name="status_green_text">#15803D</color>
+    <color name="badge_upcoming_bg">#EFF6FF</color>
+    <color name="badge_upcoming_text">#2563EB</color>
+
+    <!-- Neutrals & Backgrounds -->
+    <color name="bg_surface">#FAFAFC</color>
+    <color name="card_bg">#FFFFFF</color>
+    <color name="card_border">#EEF2F6</color>
+    <color name="card_border_light">#F1F5F9</color>
+    <color name="divider">#E2E8F0</color>
+
+    <!-- Typography Colors -->
+    <color name="text_primary">#0F172A</color>
+    <color name="text_secondary">#475569</color>
+    <color name="text_muted">#94A3B8</color>
+    <color name="text_hint">#94A3B8</color>
+
+    <!-- Input Colors -->
+    <color name="input_bg">#FFFFFF</color>
+    <color name="input_border">#E2E8F0</color>
+
+    <!-- Bottom Navigation Colors -->
+    <color name="nav_active">#0052CC</color>
+    <color name="nav_inactive">#64748B</color>
+
+    <!-- Calendar Legend Dots -->
+    <color name="cal_work_day">#0052CC</color>
+    <color name="cal_completed">#16A34A</color>
+    <color name="cal_day_off">#CBD5E1</color>
 </resources>

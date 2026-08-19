@@ -8,7 +8,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Color
-import android.location.Geocoder
 import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
@@ -16,16 +15,17 @@ import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
 import android.view.View
-import android.view.inputmethod.EditorInfo
-import android.view.inputmethod.InputMethodManager
-import android.widget.Button
-import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import android.widget.ViewFlipper
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.cardview.widget.CardView
 import androidx.core.content.ContextCompat
 import com.google.android.gms.common.api.ResolvableApiException
 import com.google.android.gms.location.Geofence
@@ -39,57 +39,72 @@ import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.SupportMapFragment
-import com.google.android.gms.maps.model.Circle
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CircleOptions
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.MarkerOptions
-import com.google.android.material.slider.Slider
-import java.net.HttpURLConnection
-import java.net.URL
-import java.util.regex.Pattern
+import com.google.android.material.button.MaterialButton
 
 class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
+    private lateinit var viewFlipper: ViewFlipper
     private lateinit var mMap: GoogleMap
-    private var alarmLocation: LatLng? = null
+    private var isMapReady = false
 
-    private lateinit var tvRadiusLabel: TextView
-    private lateinit var radiusSlider: Slider
-    private lateinit var radiusCard: View
+    // Bottom Nav Tabs
+    private lateinit var tabHome: LinearLayout
+    private lateinit var tabMap: LinearLayout
+    private lateinit var tabWork: LinearLayout
+    private lateinit var tabProfile: LinearLayout
 
-    private var currentRadius = 500.0
-    private var mapCircle: Circle? = null
-    private lateinit var btnSetAlarm: Button
-    private lateinit var etSearch: EditText
-    private lateinit var btnSearch: Button
+    private lateinit var ivNavHome: ImageView
+    private lateinit var tvNavHome: TextView
+    private lateinit var ivNavMap: ImageView
+    private lateinit var tvNavMap: TextView
+    private lateinit var ivNavWork: ImageView
+    private lateinit var tvNavWork: TextView
+    private lateinit var ivNavProfile: ImageView
+    private lateinit var tvNavProfile: TextView
 
-    private val geocoder by lazy { Geocoder(this) }
-    private var isSystemArmed = false
+    // Sample Worksites
+    private val worksiteA = LatLng(10.5276, 76.2144)
+    private val worksiteB = LatLng(10.5310, 76.2190)
+    private val worksiteC = LatLng(10.5230, 76.2100)
 
+    // OS Level Sabotage & Geofence Engine
     private val locationStateReceiver = LocationStateReceiver()
-
     private lateinit var geofencingClient: GeofencingClient
     private val geofencePendingIntent: PendingIntent by lazy {
         val intent = Intent(this, GeofenceBroadcastReceiver::class.java)
-        PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
+        PendingIntent.getBroadcast(
+            this,
+            0,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+        )
     }
 
     private val requestPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
-            if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
+            val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
+            val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+
+            if (fineGranted || coarseGranted) {
                 checkLocationSettings()
+                enableUserLocation()
+                startRadarServiceSafely()
             } else {
-                Log.e("GeoAlarm", "Location required for alarm")
+                Log.e("WorkerTracker", "Location permission denied by user")
             }
         }
 
     private val resolutionForResult =
         registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
             if (result.resultCode == RESULT_OK) {
-                Log.d("GeoAlarm", "User enabled location services.")
+                Log.d("WorkerTracker", "User enabled location services.")
                 enableUserLocation()
             } else {
-                Log.e("GeoAlarm", "User refused to enable location services.")
+                Log.e("WorkerTracker", "User refused location services.")
             }
         }
 
@@ -98,53 +113,27 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         setContentView(R.layout.activity_main)
 
         geofencingClient = LocationServices.getGeofencingClient(this)
-        btnSetAlarm = findViewById(R.id.btnSetAlarm)
+        viewFlipper = findViewById(R.id.viewFlipperMain)
 
-        val mapFragment = supportFragmentManager
-            .findFragmentById(R.id.map) as SupportMapFragment
-        mapFragment.getMapAsync(this)
+        // Initialize UI Tabs and Navigation
+        setupBottomNavigation()
+        setupHomeInteractions()
+        setupProfileInteractions()
+        setupWorkCalendar()
 
+        // Initialize Google Maps fragment
+        val mapFragment = supportFragmentManager.findFragmentById(R.id.mapFragment) as? SupportMapFragment
+        mapFragment?.getMapAsync(this)
+
+        // Request runtime permissions
         requestPermissions()
 
-        btnSetAlarm.setOnClickListener {
-            if (isSystemArmed) {
-                cancelAlarm()
-            } else {
-                alarmLocation?.let { target ->
-                    addGeofence(target)
-                }
-            }
+        // If permissions already exist, start Radar service
+        if (hasLocationPermission()) {
+            startRadarServiceSafely()
         }
 
-        etSearch = findViewById(R.id.etSearch)
-        btnSearch = findViewById(R.id.btnSearch)
-
-        btnSearch.setOnClickListener {
-            performSearch()
-        }
-
-        etSearch.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_SEARCH) {
-                performSearch()
-                true
-            } else false
-        }
-
-        tvRadiusLabel = findViewById(R.id.tvRadiusLabel)
-        radiusSlider = findViewById(R.id.radiusSlider)
-        radiusCard = findViewById(R.id.radiusCard)
-
-        radiusSlider.addOnChangeListener { _, value, _ ->
-            currentRadius = value.toDouble()
-            if (currentRadius >= 1000) {
-                tvRadiusLabel.text = "Trigger Radius: ${currentRadius / 1000}km"
-            } else {
-                tvRadiusLabel.text = "Trigger Radius: ${currentRadius.toInt()}m"
-            }
-            mapCircle?.radius = currentRadius
-        }
-
-        // Listen for GPS toggles while MainActivity is alive
+        // Register Location State Receiver for OS Sabotage Alarm
         try {
             val filter = IntentFilter().apply {
                 addAction(LocationManager.PROVIDERS_CHANGED_ACTION)
@@ -156,9 +145,29 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 filter,
                 ContextCompat.RECEIVER_EXPORTED
             )
-            Log.d("MainActivity", "LocationStateReceiver registered with RECEIVER_EXPORTED")
+            Log.d("WorkerTracker", "LocationStateReceiver registered successfully")
         } catch (e: Exception) {
-            Log.e("MainActivity", "Receiver registration error: ${e.message}")
+            Log.e("WorkerTracker", "Receiver registration error: ${e.message}")
+        }
+    }
+
+    private fun hasLocationPermission(): Boolean {
+        val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        return fine || coarse
+    }
+
+    private fun startRadarServiceSafely() {
+        if (!hasLocationPermission()) return
+        try {
+            val radarServiceIntent = Intent(this, RadarService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(radarServiceIntent)
+            } else {
+                startService(radarServiceIntent)
+            }
+        } catch (e: Exception) {
+            Log.e("WorkerTracker", "Could not start RadarService: ${e.message}")
         }
     }
 
@@ -171,24 +180,276 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
     }
 
-    override fun onMapReady(googleMap: GoogleMap) {
-        mMap = googleMap
-        checkLocationSettings()
+    // ==========================================
+    // BOTTOM NAVIGATION SYSTEM
+    // ==========================================
+    private fun setupBottomNavigation() {
+        tabHome = findViewById(R.id.tabHome)
+        tabMap = findViewById(R.id.tabMap)
+        tabWork = findViewById(R.id.tabWork)
+        tabProfile = findViewById(R.id.tabProfile)
 
-        mMap.setOnMapLongClickListener { latLng ->
-            setTargetLocation(latLng)
+        ivNavHome = findViewById(R.id.ivNavHome)
+        tvNavHome = findViewById(R.id.tvNavHome)
+        ivNavMap = findViewById(R.id.ivNavMap)
+        tvNavMap = findViewById(R.id.tvNavMap)
+        ivNavWork = findViewById(R.id.ivNavWork)
+        tvNavWork = findViewById(R.id.tvNavWork)
+        ivNavProfile = findViewById(R.id.ivNavProfile)
+        tvNavProfile = findViewById(R.id.tvNavProfile)
+
+        tabHome.setOnClickListener { switchTab(0) }
+        tabMap.setOnClickListener { switchTab(1) }
+        tabWork.setOnClickListener { switchTab(2) }
+        tabProfile.setOnClickListener { switchTab(3) }
+    }
+
+    private fun switchTab(index: Int) {
+        viewFlipper.displayedChild = index
+
+        val activeColor = getColor(R.color.brand_blue)
+        val inactiveColor = getColor(R.color.text_muted)
+
+        // Reset all tabs
+        ivNavHome.setColorFilter(inactiveColor)
+        tvNavHome.setTextColor(inactiveColor)
+        tvNavHome.paint.isFakeBoldText = false
+
+        ivNavMap.setColorFilter(inactiveColor)
+        tvNavMap.setTextColor(inactiveColor)
+        tvNavMap.paint.isFakeBoldText = false
+
+        ivNavWork.setColorFilter(inactiveColor)
+        tvNavWork.setTextColor(inactiveColor)
+        tvNavWork.paint.isFakeBoldText = false
+
+        ivNavProfile.setColorFilter(inactiveColor)
+        tvNavProfile.setTextColor(inactiveColor)
+        tvNavProfile.paint.isFakeBoldText = false
+
+        // Highlight selected tab
+        when (index) {
+            0 -> {
+                ivNavHome.setColorFilter(activeColor)
+                tvNavHome.setTextColor(activeColor)
+                tvNavHome.paint.isFakeBoldText = true
+            }
+            1 -> {
+                ivNavMap.setColorFilter(activeColor)
+                tvNavMap.setTextColor(activeColor)
+                tvNavMap.paint.isFakeBoldText = true
+                if (isMapReady) {
+                    mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(worksiteA, 15f))
+                }
+            }
+            2 -> {
+                ivNavWork.setColorFilter(activeColor)
+                tvNavWork.setTextColor(activeColor)
+                tvNavWork.paint.isFakeBoldText = true
+            }
+            3 -> {
+                ivNavProfile.setColorFilter(activeColor)
+                tvNavProfile.setTextColor(activeColor)
+                tvNavProfile.paint.isFakeBoldText = true
+            }
+        }
+    }
+
+    // ==========================================
+    // SCREEN 2: HOME INTERACTIONS
+    // ==========================================
+    private fun setupHomeInteractions() {
+        val btnViewOnMapLink = findViewById<LinearLayout>(R.id.btnViewOnMapLink)
+        val btnNextWorksiteArrow = findViewById<FrameLayout>(R.id.btnNextWorksiteArrow)
+        val cardWorksite1 = findViewById<CardView>(R.id.cardWorksite1)
+        val cardWorksite2 = findViewById<CardView>(R.id.cardWorksite2)
+        val cardWorksite3 = findViewById<CardView>(R.id.cardWorksite3)
+
+        val goToMapAction = View.OnClickListener {
+            switchTab(1)
         }
 
-        handleSharedIntent(intent)
-        restoreArmedState()
+        btnViewOnMapLink?.setOnClickListener(goToMapAction)
+        btnNextWorksiteArrow?.setOnClickListener(goToMapAction)
+        cardWorksite1?.setOnClickListener(goToMapAction)
+        cardWorksite2?.setOnClickListener(goToMapAction)
+        cardWorksite3?.setOnClickListener(goToMapAction)
     }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        handleSharedIntent(intent)
+    // ==========================================
+    // SCREEN 3: MAP & GEOFENCE OS ALARM SETUP
+    // ==========================================
+    override fun onMapReady(googleMap: GoogleMap) {
+        mMap = googleMap
+        isMapReady = true
+
+        // Configure Map UI
+        mMap.uiSettings.isZoomControlsEnabled = false
+        mMap.uiSettings.isMyLocationButtonEnabled = false
+
+        // Plot Worksite Markers & Geofence Circles
+        plotWorksiteMarkers()
+
+        // Enable GPS location dot
+        enableUserLocation()
+
+        // Move to default worksite A
+        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(worksiteA, 15f))
+
+        // GPS Recenter Button
+        val fabRecenter = findViewById<CardView>(R.id.fabRecenterLocation)
+        fabRecenter?.setOnClickListener {
+            enableUserLocation()
+            checkLocationSettings()
+            mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(worksiteA, 16f))
+            Toast.makeText(this, "Centered on Current Location", Toast.LENGTH_SHORT).show()
+        }
+
+        // View Details Button in Bottom Map Card
+        val btnMapDetails = findViewById<MaterialButton>(R.id.btnMapWorksiteDetails)
+        btnMapDetails?.setOnClickListener {
+            Toast.makeText(this, "Construction Site A: Geofence Active (500m)", Toast.LENGTH_SHORT).show()
+        }
+
+        // Arm geofence at Worksite A
+        armWorksiteGeofence(worksiteA, 500f)
     }
 
+    private fun plotWorksiteMarkers() {
+        if (!::mMap.isInitialized) return
+
+        mMap.clear()
+
+        // Worksite A: Construction Site A
+        mMap.addMarker(
+            MarkerOptions()
+                .position(worksiteA)
+                .title("Construction Site A")
+                .snippet("10:00 AM – 1:00 PM")
+                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
+        )
+        mMap.addCircle(
+            CircleOptions()
+                .center(worksiteA)
+                .radius(500.0)
+                .strokeColor(Color.parseColor("#0052CC"))
+                .fillColor(Color.argb(35, 0, 82, 204))
+                .strokeWidth(4f)
+        )
+
+        // Worksite B: Warehouse Renovation
+        mMap.addMarker(
+            MarkerOptions()
+                .position(worksiteB)
+                .title("Warehouse Renovation")
+                .snippet("2:00 PM – 5:00 PM")
+                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
+        )
+        mMap.addCircle(
+            CircleOptions()
+                .center(worksiteB)
+                .radius(400.0)
+                .strokeColor(Color.parseColor("#0052CC"))
+                .fillColor(Color.argb(25, 0, 82, 204))
+                .strokeWidth(3f)
+        )
+
+        // Worksite C: Site Office Work
+        mMap.addMarker(
+            MarkerOptions()
+                .position(worksiteC)
+                .title("Site Office Work")
+                .snippet("5:30 PM – 6:30 PM")
+                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
+        )
+        mMap.addCircle(
+            CircleOptions()
+                .center(worksiteC)
+                .radius(300.0)
+                .strokeColor(Color.parseColor("#0052CC"))
+                .fillColor(Color.argb(25, 0, 82, 204))
+                .strokeWidth(3f)
+        )
+    }
+
+    private fun armWorksiteGeofence(latLng: LatLng, radius: Float) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+
+        val sharedPrefs = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
+        sharedPrefs.edit()
+            .putFloat("TARGET_RADIUS", radius)
+            .putBoolean("IS_SYSTEM_ARMED", true)
+            .apply()
+
+        val geoPrefs = getSharedPreferences("GeoPrefs", Context.MODE_PRIVATE)
+        geoPrefs.edit()
+            .putFloat("TARGET_LAT", latLng.latitude.toFloat())
+            .putFloat("TARGET_LNG", latLng.longitude.toFloat())
+            .apply()
+
+        val uniqueGeofenceId = "WORKSITE_A_ZONE"
+        val geofence = Geofence.Builder()
+            .setRequestId(uniqueGeofenceId)
+            .setCircularRegion(latLng.latitude, latLng.longitude, radius + 1000f)
+            .setExpirationDuration(Geofence.NEVER_EXPIRE)
+            .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_EXIT)
+            .build()
+
+        val geofencingRequest = GeofencingRequest.Builder()
+            .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER or GeofencingRequest.INITIAL_TRIGGER_DWELL)
+            .addGeofence(geofence)
+            .build()
+
+        geofencingClient.addGeofences(geofencingRequest, geofencePendingIntent).run {
+            addOnSuccessListener {
+                Log.d("WorkerTracker", "OS Geofence active for Worksite A")
+            }
+            addOnFailureListener {
+                Log.e("WorkerTracker", "Geofence registration error: ${it.message}")
+            }
+        }
+    }
+
+    // ==========================================
+    // SCREEN 4: WORK / SCHEDULE
+    // ==========================================
+    private fun setupWorkCalendar() {
+        val ivPrevMonth = findViewById<ImageView>(R.id.ivPrevMonth)
+        val ivNextMonth = findViewById<ImageView>(R.id.ivNextMonth)
+
+        ivPrevMonth?.setOnClickListener {
+            Toast.makeText(this, "April 2026", Toast.LENGTH_SHORT).show()
+        }
+        ivNextMonth?.setOnClickListener {
+            Toast.makeText(this, "June 2026", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // ==========================================
+    // SCREEN 5: PROFILE
+    // ==========================================
+    private fun setupProfileInteractions() {
+        val btnLogout = findViewById<MaterialButton>(R.id.btnLogout)
+        btnLogout?.setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("Log Out")
+                .setMessage("Are you sure you want to log out?")
+                .setPositiveButton("Log Out") { _, _ ->
+                    val intent = Intent(this, LoginActivity::class.java)
+                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    startActivity(intent)
+                    finish()
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+    }
+
+    // ==========================================
+    // PERMISSIONS & OS ALARM OVERLAY CHECKS
+    // ==========================================
     private fun requestPermissions() {
         val permissions = mutableListOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
@@ -198,17 +459,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         }
         requestPermissionLauncher.launch(permissions.toTypedArray())
-
         checkOverlayAndAlarmPermissions()
     }
 
     private fun checkOverlayAndAlarmPermissions() {
-        // 1. Overlay Permission ("Display over other apps")
+        // Overlay Permission for Over-Home Screen Alarm
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
             AlertDialog.Builder(this)
                 .setTitle("Permission Needed: Display Over Other Apps")
                 .setMessage(
-                    "To show the full-screen alarm immediately when location is turned off or when your destination is reached, please enable 'Display over other apps'."
+                    "To trigger the full-screen alarm immediately when location is turned off or when entering worksites, please enable 'Display over other apps'."
                 )
                 .setPositiveButton("Open Settings") { _, _ ->
                     val intent = Intent(
@@ -217,20 +477,19 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     )
                     startActivity(intent)
                 }
-                .setNegativeButton("Later") { dialog, _ -> dialog.dismiss() }
-                .setCancelable(false)
+                .setNegativeButton("Later", null)
                 .show()
             return
         }
 
-        // 2. Full-Screen Intent Permission (Android 14+)
+        // Full-Screen Intent Permission (Android 14+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             if (!notificationManager.canUseFullScreenIntent()) {
                 AlertDialog.Builder(this)
                     .setTitle("Permission Needed: Full-Screen Alarms")
                     .setMessage(
-                        "To wake your screen and sound the alarm over the lock screen, enable 'Allow full-screen intents' in settings."
+                        "To sound the siren and wake your device over the lock screen, enable 'Allow full-screen intents' in settings."
                     )
                     .setPositiveButton("Open Settings") { _, _ ->
                         val intent = Intent(
@@ -239,238 +498,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                         )
                         startActivity(intent)
                     }
-                    .setNegativeButton("Later") { dialog, _ -> dialog.dismiss() }
-                    .setCancelable(false)
+                    .setNegativeButton("Later", null)
                     .show()
-            }
-        }
-    }
-
-    private fun performSearch() {
-        val query = etSearch.text.toString()
-        if (query.isEmpty()) return
-
-        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-        imm.hideSoftInputFromWindow(etSearch.windowToken, 0)
-
-        try {
-            val addresses = geocoder.getFromLocationName(query, 1)
-            if (!addresses.isNullOrEmpty()) {
-                val location = addresses[0]
-                val latLng = LatLng(location.latitude, location.longitude)
-                mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, 15f))
-                setTargetLocation(latLng)
-            } else {
-                Toast.makeText(this, "Location not found", Toast.LENGTH_SHORT).show()
-            }
-        } catch (e: Exception) {
-            Log.e("GeoAlarm", "Geocoding failed: ${e.message}")
-        }
-    }
-
-    private fun cancelAlarm() {
-        radiusCard.visibility = View.GONE
-
-        // Update preference
-        val alarmPrefs = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
-        alarmPrefs.edit().putBoolean("IS_SYSTEM_ARMED", false).apply()
-
-        // Remove Geofence
-        geofencingClient.removeGeofences(geofencePendingIntent)
-
-        // Stop Foreground Radar Service
-        val serviceIntent = Intent(this, RadarService::class.java)
-        stopService(serviceIntent)
-
-        // Reset UI
-        isSystemArmed = false
-        mMap.clear()
-        btnSetAlarm.visibility = View.GONE
-
-        Toast.makeText(this, "Alarm Cancelled & Disarmed", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun setTargetLocation(latLng: LatLng) {
-        if (isSystemArmed) {
-            cancelAlarm()
-        }
-
-        mMap.clear()
-        alarmLocation = latLng
-
-        mMap.addMarker(MarkerOptions().position(latLng).title("Sniper Trigger Zone"))
-
-        mapCircle = mMap.addCircle(
-            CircleOptions().center(latLng).radius(currentRadius)
-                .strokeColor(Color.RED).fillColor(Color.argb(70, 255, 0, 0)).strokeWidth(5f)
-        )
-
-        radiusCard.visibility = View.VISIBLE
-        btnSetAlarm.visibility = View.VISIBLE
-        btnSetAlarm.isEnabled = true
-        btnSetAlarm.text = "SET ALARM"
-        btnSetAlarm.setBackgroundColor(Color.parseColor("#4CAF50"))
-        btnSetAlarm.setCompoundDrawablesWithIntrinsicBounds(0, 0, 0, 0)
-    }
-
-    private fun restoreArmedState() {
-        val alarmPrefs = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
-        val currentlyArmed = alarmPrefs.getBoolean("IS_SYSTEM_ARMED", false)
-
-        if (currentlyArmed) {
-            isSystemArmed = true
-
-            val geoPrefs = getSharedPreferences("GeoPrefs", Context.MODE_PRIVATE)
-            val savedLat = geoPrefs.getFloat("TARGET_LAT", 0f).toDouble()
-            val savedLng = geoPrefs.getFloat("TARGET_LNG", 0f).toDouble()
-            currentRadius = alarmPrefs.getFloat("TARGET_RADIUS", 500f).toDouble()
-
-            if (savedLat != 0.0 && savedLng != 0.0) {
-                val savedLatLng = LatLng(savedLat, savedLng)
-                alarmLocation = savedLatLng
-
-                mMap.clear()
-                mMap.addMarker(MarkerOptions().position(savedLatLng).title("Sniper Trigger Zone"))
-                mapCircle = mMap.addCircle(
-                    CircleOptions().center(savedLatLng).radius(currentRadius)
-                        .strokeColor(Color.RED).fillColor(Color.argb(70, 255, 0, 0)).strokeWidth(5f)
-                )
-
-                mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(savedLatLng, 15f))
-
-                radiusCard.visibility = View.VISIBLE
-                radiusSlider.value = currentRadius.toFloat()
-                if (currentRadius >= 1000) {
-                    tvRadiusLabel.text = "Trigger Radius: ${currentRadius / 1000}km"
-                } else {
-                    tvRadiusLabel.text = "Trigger Radius: ${currentRadius.toInt()}m"
-                }
-
-                btnSetAlarm.visibility = View.VISIBLE
-                btnSetAlarm.isEnabled = true
-                btnSetAlarm.text = "CANCEL ALARM"
-                btnSetAlarm.setBackgroundColor(Color.parseColor("#F44336"))
-                btnSetAlarm.setCompoundDrawablesWithIntrinsicBounds(android.R.drawable.ic_menu_close_clear_cancel, 0, 0, 0)
-            }
-        }
-    }
-
-    private fun handleSharedIntent(intent: Intent) {
-        if (intent.action == Intent.ACTION_SEND && intent.type == "text/plain") {
-            val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return
-
-            val urlMatcher = Pattern.compile("https?://\\S+").matcher(sharedText)
-            if (urlMatcher.find()) {
-                val shortUrl = urlMatcher.group()
-
-                Thread {
-                    try {
-                        var currentUrl = shortUrl
-                        var htmlContent = ""
-                        var redirects = 0
-
-                        while (redirects < 5) {
-                            val connection = URL(currentUrl).openConnection() as HttpURLConnection
-                            connection.setRequestProperty(
-                                "User-Agent",
-                                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                            )
-                            connection.instanceFollowRedirects = false
-                            connection.connect()
-
-                            val responseCode = connection.responseCode
-                            if (responseCode in 300..399) {
-                                val location = connection.getHeaderField("Location")
-                                if (location != null) {
-                                    currentUrl = location
-                                    redirects++
-                                    connection.disconnect()
-                                    continue
-                                }
-                            }
-
-                            if (responseCode == 200) {
-                                htmlContent = connection.inputStream.bufferedReader().readText()
-                            }
-                            connection.disconnect()
-                            break
-                        }
-
-                        var targetLat: Double? = null
-                        var targetLng: Double? = null
-
-                        val urlRegexes = listOf(
-                            Regex("!3d(-?\\d+\\.\\d+)!4d(-?\\d+\\.\\d+)"),
-                            Regex("@(-?\\d+\\.\\d+),(-?\\d+\\.\\d+)"),
-                            Regex("[?&](?:q|query|ll)=(-?\\d+\\.\\d+),(-?\\d+\\.\\d+)")
-                        )
-
-                        for (regex in urlRegexes) {
-                            val match = regex.find(currentUrl)
-                            if (match != null) {
-                                targetLat = match.groupValues[1].toDouble()
-                                targetLng = match.groupValues[2].toDouble()
-                                break
-                            }
-                        }
-
-                        if (targetLat == null) {
-                            val deepLinkRegex = Regex("android-app://com\\.google\\.android\\.apps\\.maps/geo/0,0\\?q=(?:.*?%40|.*?@)?(-?\\d+\\.\\d+)[,%2C]+(-?\\d+\\.\\d+)")
-                            val markerRegex = Regex("markers=(?:.*?%7C|.*?\\|)?(-?\\d+\\.\\d+)(?:%2C|,)(-?\\d+\\.\\d+)")
-                            val metaLatRegex = Regex("content=[\"'](-?\\d+\\.\\d+)[\"']\\s*itemprop=[\"']latitude[\"']|itemprop=[\"']latitude[\"']\\s*content=[\"'](-?\\d+\\.\\d+)[\"']")
-                            val metaLngRegex = Regex("content=[\"'](-?\\d+\\.\\d+)[\"']\\s*itemprop=[\"']longitude[\"']|itemprop=[\"']longitude[\"']\\s*content=[\"'](-?\\d+\\.\\d+)[\"']")
-
-                            val deepLinkMatch = deepLinkRegex.find(htmlContent)
-                            val markerMatch = markerRegex.find(htmlContent)
-                            val latMatch = metaLatRegex.find(htmlContent)
-                            val lngMatch = metaLngRegex.find(htmlContent)
-
-                            if (deepLinkMatch != null) {
-                                targetLat = deepLinkMatch.groupValues[1].toDouble()
-                                targetLng = deepLinkMatch.groupValues[2].toDouble()
-                            } else if (markerMatch != null) {
-                                targetLat = markerMatch.groupValues[1].toDouble()
-                                targetLng = markerMatch.groupValues[2].toDouble()
-                            } else if (latMatch != null && lngMatch != null) {
-                                val latStr = if (latMatch.groupValues[1].isNotEmpty()) latMatch.groupValues[1] else latMatch.groupValues[2]
-                                val lngStr = if (lngMatch.groupValues[1].isNotEmpty()) lngMatch.groupValues[1] else lngMatch.groupValues[2]
-                                targetLat = latStr.toDouble()
-                                targetLng = lngStr.toDouble()
-                            }
-                        }
-
-                        if (targetLat == null) {
-                            val placeRegex = Regex("/place/([^/]+)/")
-                            val placeMatch = placeRegex.find(currentUrl)
-
-                            if (placeMatch != null) {
-                                val rawPlace = placeMatch.groupValues[1]
-                                val coordMatch = Regex("^(-?\\d+\\.\\d+)(?:%2C|,)(-?\\d+\\.\\d+)$").find(rawPlace)
-                                if (coordMatch != null) {
-                                    targetLat = coordMatch.groupValues[1].toDouble()
-                                    targetLng = coordMatch.groupValues[2].toDouble()
-                                } else {
-                                    val cleanAddress = java.net.URLDecoder.decode(rawPlace.replace("+", " "), "UTF-8")
-                                    val addresses = geocoder.getFromLocationName(cleanAddress, 1)
-                                    if (!addresses.isNullOrEmpty()) {
-                                        targetLat = addresses[0].latitude
-                                        targetLng = addresses[0].longitude
-                                    }
-                                }
-                            }
-                        }
-
-                        if (targetLat != null && targetLng != null) {
-                            val sharedLatLng = LatLng(targetLat, targetLng)
-                            runOnUiThread {
-                                mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(sharedLatLng, 15f))
-                                setTargetLocation(sharedLatLng)
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e("GeoAlarm", "Scraper crashed", e)
-                    }
-                }.start()
             }
         }
     }
@@ -488,76 +517,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     val intentSenderRequest = IntentSenderRequest.Builder(exception.resolution).build()
                     resolutionForResult.launch(intentSenderRequest)
                 } catch (sendEx: Exception) {
-                    Log.e("GeoAlarm", "Error showing location prompt", sendEx)
-                }
-            }
-        }
-    }
-
-    private fun addGeofence(latLng: LatLng) {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            Toast.makeText(this, "Location permission required to arm alarm", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        // 1. Save alarm configuration
-        val sharedPrefs = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
-        sharedPrefs.edit()
-            .putFloat("TARGET_RADIUS", currentRadius.toFloat())
-            .putBoolean("IS_SYSTEM_ARMED", true)
-            .apply()
-
-        val geoPrefs = getSharedPreferences("GeoPrefs", Context.MODE_PRIVATE)
-        geoPrefs.edit()
-            .putFloat("TARGET_LAT", latLng.latitude.toFloat())
-            .putFloat("TARGET_LNG", latLng.longitude.toFloat())
-            .apply()
-
-        // 2. Start the Foreground Radar Service immediately!
-        // This keeps the app running in the background with its LocationStateReceiver active
-        val radarServiceIntent = Intent(this, RadarService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(radarServiceIntent)
-        } else {
-            startService(radarServiceIntent)
-        }
-
-        // 3. Register Geofence with Android OS
-        geofencingClient.removeGeofences(geofencePendingIntent).addOnCompleteListener {
-            val uniqueGeofenceId = "ALARM_ZONE_${System.currentTimeMillis()}"
-            val tripwireRadius = currentRadius.toFloat() + 2000f
-
-            val geofence = Geofence.Builder()
-                .setRequestId(uniqueGeofenceId)
-                .setCircularRegion(latLng.latitude, latLng.longitude, tripwireRadius)
-                .setExpirationDuration(Geofence.NEVER_EXPIRE)
-                .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER)
-                .build()
-
-            val geofencingRequest = GeofencingRequest.Builder()
-                .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER or GeofencingRequest.INITIAL_TRIGGER_DWELL)
-                .addGeofence(geofence)
-                .build()
-
-            geofencingClient.addGeofences(geofencingRequest, geofencePendingIntent).run {
-                addOnSuccessListener {
-                    Log.d("GeoAlarm", "Geofence armed successfully!")
-                    isSystemArmed = true
-                    btnSetAlarm.isEnabled = true
-                    btnSetAlarm.text = "CANCEL ALARM"
-                    btnSetAlarm.setBackgroundColor(Color.parseColor("#F44336"))
-                    btnSetAlarm.setCompoundDrawablesWithIntrinsicBounds(android.R.drawable.ic_menu_close_clear_cancel, 0, 0, 0)
-                    Toast.makeText(this@MainActivity, "✓ Alarm Armed! System is watching.", Toast.LENGTH_SHORT).show()
-                }
-                addOnFailureListener {
-                    Log.e("GeoAlarm", "Failed to register geofence: ${it.message}")
-                    // Even if geofence failed, RadarService is actively tracking
-                    isSystemArmed = true
-                    btnSetAlarm.isEnabled = true
-                    btnSetAlarm.text = "CANCEL ALARM"
-                    btnSetAlarm.setBackgroundColor(Color.parseColor("#F44336"))
-                    btnSetAlarm.setCompoundDrawablesWithIntrinsicBounds(android.R.drawable.ic_menu_close_clear_cancel, 0, 0, 0)
-                    Toast.makeText(this@MainActivity, "✓ Alarm Armed via Radar Service!", Toast.LENGTH_SHORT).show()
+                    Log.e("WorkerTracker", "Error showing location prompt", sendEx)
                 }
             }
         }

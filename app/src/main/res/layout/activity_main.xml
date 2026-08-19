@@ -5,132 +5,49 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#000000"
+    android:background="@color/bg_surface"
     tools:context=".MainActivity">
 
-    <!-- Edge-to-Edge Map -->
-    <androidx.fragment.app.FragmentContainerView
-        android:id="@+id/map"
-        android:name="com.google.android.gms.maps.SupportMapFragment"
+    <!-- ViewFlipper Container for Tab Switching -->
+    <ViewFlipper
+        android:id="@+id/viewFlipperMain"
         android:layout_width="0dp"
         android:layout_height="0dp"
         app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/bottomNavContainer"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <!-- 0: Home Screen -->
+        <include
+            android:id="@+id/includeViewHome"
+            layout="@layout/view_home" />
+
+        <!-- 1: Map Screen -->
+        <include
+            android:id="@+id/includeViewMap"
+            layout="@layout/view_map" />
+
+        <!-- 2: Work Screen -->
+        <include
+            android:id="@+id/includeViewWork"
+            layout="@layout/view_work" />
+
+        <!-- 3: Profile Screen -->
+        <include
+            android:id="@+id/includeViewProfile"
+            layout="@layout/view_profile" />
+
+    </ViewFlipper>
+
+    <!-- Bottom Navigation Bar -->
+    <include
+        android:id="@+id/bottomNavContainer"
+        layout="@layout/layout_bottom_nav"
+        android:layout_width="0dp"
+        android:layout_height="68dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
-
-    <!-- Dark Floating Search Bar -->
-    <androidx.cardview.widget.CardView
-        android:id="@+id/searchCard"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginHorizontal="16dp"
-        android:layout_marginTop="48dp"
-        app:cardBackgroundColor="#1E1E1E"
-        app:cardCornerRadius="24dp"
-        app:cardElevation="8dp"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingHorizontal="16dp"
-            android:paddingVertical="8dp">
-
-            <EditText
-                android:id="@+id/etSearch"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:background="@null"
-                android:hint="Search destination..."
-                android:imeOptions="actionSearch"
-                android:inputType="textPostalAddress"
-                android:maxLines="1"
-                android:padding="8dp"
-                android:textColor="#FFFFFF"
-                android:textColorHint="#888888"
-                android:textSize="16sp" />
-
-            <Button
-                android:id="@+id/btnSearch"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:backgroundTint="#333333"
-                android:text="GO"
-                android:textColor="#4CAF50"
-                android:textStyle="bold"
-                app:cornerRadius="16dp" />
-        </LinearLayout>
-    </androidx.cardview.widget.CardView>
-
-    <!-- Dynamic Radius Control Panel -->
-    <androidx.cardview.widget.CardView
-        android:id="@+id/radiusCard"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginHorizontal="16dp"
-        android:layout_marginBottom="16dp"
-        android:visibility="gone"
-        app:cardBackgroundColor="#1E1E1E"
-        app:cardCornerRadius="16dp"
-        app:cardElevation="8dp"
-        app:layout_constraintBottom_toTopOf="@+id/btnSetAlarm"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="16dp">
-
-            <TextView
-                android:id="@+id/tvRadiusLabel"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Trigger Radius: 500m"
-                android:textColor="#FFFFFF"
-                android:textSize="14sp"
-                android:textStyle="bold" />
-
-            <com.google.android.material.slider.Slider
-                android:id="@+id/radiusSlider"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:stepSize="100.0"
-                android:valueFrom="100.0"
-                android:valueTo="5000.0"
-                android:value="500.0"
-                app:haloColor="#4D4CAF50"
-                app:thumbColor="#4CAF50"
-                app:trackColorActive="#4CAF50"
-                app:trackColorInactive="#333333" />
-        </LinearLayout>
-    </androidx.cardview.widget.CardView>
-
-    <!-- Floating Material Button (Darkened) -->
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnSetAlarm"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="48dp"
-        android:paddingHorizontal="32dp"
-        android:paddingVertical="12dp"
-        android:text="SET ALARM"
-        android:textColor="#FFFFFF"
-        android:textSize="16sp"
-        android:textStyle="bold"
-        android:visibility="gone"
-        app:backgroundTint="#4CAF50"
-        app:cornerRadius="24dp"
-        app:elevation="8dp"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
