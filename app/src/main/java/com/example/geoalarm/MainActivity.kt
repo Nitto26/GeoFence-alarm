@@ -19,8 +19,10 @@ import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
+import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.GridLayout
@@ -41,6 +43,10 @@ import androidx.lifecycle.lifecycleScope
 import com.example.geoalarm.network.ApiClient
 import com.example.geoalarm.network.EventReporter
 import com.example.geoalarm.network.JobItem
+import com.example.geoalarm.network.SyncEngine
+import com.example.geoalarm.network.SyncState
+import com.example.geoalarm.storage.LocalEventDatabaseHelper
+import com.example.geoalarm.storage.LocalEventRecord
 import com.google.android.gms.common.api.ResolvableApiException
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingClient
@@ -104,6 +110,17 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     // Handlers for Clock and Shift Timer
     private val mainHandler = Handler(Looper.getMainLooper())
     private var startTimeMillis = System.currentTimeMillis() - (5 * 3600 * 1000 + 42 * 60000 + 18000)
+
+    // Secret 3-Tap Version Counter
+    private var versionClickCount = 0
+    private var lastVersionClickTime = 0L
+
+    // Sync State Listener
+    private val syncListener: (SyncState) -> Unit = { state ->
+        runOnUiThread {
+            updateSyncBadgeUi(state)
+        }
+    }
 
     // Live Clock & Shift Ticker
     private val clockTicker = object : Runnable {
@@ -178,8 +195,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Initialize API Client
+        // Initialize API Client & Sync Engine
         ApiClient.init(this)
+        SyncEngine.init(this)
+        SyncEngine.addListener(syncListener)
 
         geofencingClient = LocationServices.getGeofencingClient(this)
         viewFlipper = findViewById(R.id.viewFlipperMain)
@@ -195,6 +214,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val isClockedIn = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
             .getBoolean("IS_CLOCKED_IN", false)
         updateClockInOutUi(isClockedIn)
+
+        // Sync Initial Badge Status
+        updateSyncBadgeUi(SyncEngine.getCurrentState(this))
 
         // Initialize Google Maps fragment
         val mapFragment = supportFragmentManager.findFragmentById(R.id.mapFragment) as? SupportMapFragment
@@ -283,6 +305,38 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     // ==========================================
+    // ONLINE / OFFLINE SYNC BADGE
+    // ==========================================
+    private fun updateSyncBadgeUi(state: SyncState) {
+        val layoutBadge = findViewById<LinearLayout>(R.id.layoutSyncBadge) ?: return
+        val dot = findViewById<View>(R.id.viewSyncStatusDot) ?: return
+        val text = findViewById<TextView>(R.id.tvSyncBadgeText) ?: return
+
+        text.text = state.badgeText
+
+        when {
+            state.isOnline && state.unsyncedCount == 0 -> {
+                // Online & Fully Synced (Green)
+                layoutBadge.background = ContextCompat.getDrawable(this, R.drawable.bg_pill_green)
+                dot.backgroundTintList = ColorStateList.valueOf(getColor(R.color.status_green))
+                text.setTextColor(getColor(R.color.status_green_text))
+            }
+            state.isOnline && state.unsyncedCount > 0 -> {
+                // Online with Pending Synced Items (Amber/Blue)
+                layoutBadge.background = ContextCompat.getDrawable(this, R.drawable.bg_pill_blue)
+                dot.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#F59E0B"))
+                text.setTextColor(Color.parseColor("#D97706"))
+            }
+            else -> {
+                // Offline (Soft Red/Gray)
+                layoutBadge.background = ContextCompat.getDrawable(this, R.drawable.bg_circle_offday)
+                dot.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#EF4444"))
+                text.setTextColor(Color.parseColor("#DC2626"))
+            }
+        }
+    }
+
+    // ==========================================
     // NOTIFICATION BELL: SYSTEM LOGS DIALOG
     // ==========================================
     private fun showLiveLogsDialog() {
@@ -326,6 +380,107 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             Toast.makeText(context, "Logs Cleared", Toast.LENGTH_SHORT).show()
         }
         builder.show()
+    }
+
+    // ==========================================
+    // SECRET 3-TAP: LOCAL STORAGE & AUDIT LOGS
+    // ==========================================
+    private fun showLocalStorageAuditDialog() {
+        val context = this
+        val db = LocalEventDatabaseHelper.getInstance(context)
+        val dialog = BottomSheetDialog(context)
+        val dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_local_storage_audit, null)
+        dialog.setContentView(dialogView)
+
+        val tvStatTotal = dialogView.findViewById<TextView>(R.id.tvStatTotal)
+        val tvStatSynced = dialogView.findViewById<TextView>(R.id.tvStatSynced)
+        val tvStatPending = dialogView.findViewById<TextView>(R.id.tvStatPending)
+        val tvAuditListHeader = dialogView.findViewById<TextView>(R.id.tvAuditListHeader)
+        val btnForceSyncDialog = dialogView.findViewById<MaterialButton>(R.id.btnForceSyncDialog)
+        val btnPurgeOldDialog = dialogView.findViewById<MaterialButton>(R.id.btnPurgeOldDialog)
+        val ivCloseDialog = dialogView.findViewById<ImageView>(R.id.ivCloseDialog)
+        val llAuditListContainer = dialogView.findViewById<LinearLayout>(R.id.llAuditListContainer)
+
+        fun refreshAuditUi() {
+            val (total, synced, unsynced) = db.getStats()
+            val records = db.getAllRecordsForAudit(150)
+
+            tvStatTotal?.text = total.toString()
+            tvStatSynced?.text = synced.toString()
+            tvStatPending?.text = unsynced.toString()
+            tvAuditListHeader?.text = "Audit History (${records.size} records in last 3 days)"
+
+            llAuditListContainer?.removeAllViews()
+
+            if (records.isEmpty()) {
+                val emptyView = TextView(context).apply {
+                    text = "No local storage events recorded yet."
+                    textSize = 13f
+                    setTextColor(getColor(R.color.text_secondary))
+                    gravity = Gravity.CENTER
+                    setPadding(0, 32, 0, 32)
+                }
+                llAuditListContainer?.addView(emptyView)
+            } else {
+                for (rec in records) {
+                    val itemView = LayoutInflater.from(context).inflate(R.layout.item_local_audit_record, llAuditListContainer, false)
+
+                    val tvType = itemView.findViewById<TextView>(R.id.tvAuditEventType)
+                    val tvJob = itemView.findViewById<TextView>(R.id.tvAuditJobId)
+                    val tvStatus = itemView.findViewById<TextView>(R.id.tvAuditSyncStatus)
+                    val tvCoords = itemView.findViewById<TextView>(R.id.tvAuditCoords)
+                    val tvTime = itemView.findViewById<TextView>(R.id.tvAuditTimestamp)
+
+                    tvType?.text = rec.eventType.uppercase()
+                    tvJob?.text = rec.jobId ?: "WORKER"
+                    tvCoords?.text = "${rec.latitude}, ${rec.longitude}"
+                    tvTime?.text = rec.timestamp.replace("T", " ").take(19)
+
+                    if (rec.isSynced) {
+                        tvStatus?.text = "✓ SYNCED"
+                        tvStatus?.setTextColor(Color.parseColor("#16A34A"))
+                    } else {
+                        tvStatus?.text = "⏳ PENDING"
+                        tvStatus?.setTextColor(Color.parseColor("#D97706"))
+                    }
+
+                    llAuditListContainer?.addView(itemView)
+                }
+            }
+        }
+
+        refreshAuditUi()
+
+        btnForceSyncDialog?.setOnClickListener {
+            btnForceSyncDialog.isEnabled = false
+            btnForceSyncDialog.text = "Syncing..."
+            Toast.makeText(context, "Flushing offline storage to server...", Toast.LENGTH_SHORT).show()
+
+            SyncEngine.triggerSync(context) { success ->
+                runOnUiThread {
+                    btnForceSyncDialog.isEnabled = true
+                    btnForceSyncDialog.text = "Force Sync Now"
+                    refreshAuditUi()
+                    if (success) {
+                        Toast.makeText(context, "✓ Offline sync complete! All events delivered.", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "Sync paused (check network connection)", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+
+        btnPurgeOldDialog?.setOnClickListener {
+            val deleted = db.purgeExpiredRecords()
+            refreshAuditUi()
+            Toast.makeText(context, "Cleaned $deleted expired records (> 3 days)", Toast.LENGTH_SHORT).show()
+        }
+
+        ivCloseDialog?.setOnClickListener {
+            dialog.dismiss()
+        }
+
+        dialog.show()
     }
 
     // ==========================================
@@ -412,6 +567,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val btnGoToMap = findViewById<MaterialButton>(R.id.btnGoToMap)
         val ivBell = findViewById<ImageView>(R.id.ivNotificationBell)
         val btnClockToggle = findViewById<MaterialButton>(R.id.btnClockToggle)
+        val layoutSyncBadge = findViewById<LinearLayout>(R.id.layoutSyncBadge)
 
         val goToMapAction = View.OnClickListener {
             switchTab(1)
@@ -424,6 +580,12 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         // Notification Bell Click triggers logs dialog
         ivBell?.setOnClickListener {
             showLiveLogsDialog()
+        }
+
+        // Tap Sync Badge to trigger immediate sync attempt
+        layoutSyncBadge?.setOnClickListener {
+            Toast.makeText(this, "Checking synchronization...", Toast.LENGTH_SHORT).show()
+            SyncEngine.triggerSync(this)
         }
 
         // Clock In / Clock Out Toggle Button Handler
@@ -466,7 +628,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 }
             }
 
-            // 3. Dispatch Clock In event to backend
+            // 3. Dispatch Clock In event (stored locally and synced)
             EventReporter.reportEvent(
                 context = this,
                 eventType = "clock_in",
@@ -499,7 +661,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             // 3. Stop any ringing alarms
             AlarmController.stopAlarm(this)
 
-            // 4. Dispatch Clock Out event to backend
+            // 4. Dispatch Clock Out event (stored locally and synced)
             EventReporter.reportEvent(
                 context = this,
                 eventType = "clock_out",
@@ -891,7 +1053,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     // ==========================================
-    // SCREEN 5: PROFILE & ACCOMMODATION CLICK
+    // SCREEN 5: PROFILE, ACCOMMODATION & 3-TAP AUDIT
     // ==========================================
     private fun setupProfileInteractions() {
         val btnProfileAccommodationRow = findViewById<LinearLayout>(R.id.btnProfileAccommodationRow)
@@ -905,6 +1067,26 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             accommodationMarker?.showInfoWindow()
 
             Toast.makeText(this, "Accommodation focused: Block A, Room 203", Toast.LENGTH_LONG).show()
+        }
+
+        // Secret 3-Tap Version Listener for Offline Local Storage & Sync Audit
+        val tvVersion = findViewById<TextView>(R.id.tvAppVersion)
+        tvVersion?.setOnClickListener {
+            val now = System.currentTimeMillis()
+            if (now - lastVersionClickTime < 1500L) {
+                versionClickCount++
+            } else {
+                versionClickCount = 1
+            }
+            lastVersionClickTime = now
+
+            if (versionClickCount >= 3) {
+                versionClickCount = 0
+                showLocalStorageAuditDialog()
+            } else {
+                val remaining = 3 - versionClickCount
+                Log.d(TAG, "Version clicked ($versionClickCount/3). $remaining more taps to open Audit Log.")
+            }
         }
 
         val btnLogout = findViewById<MaterialButton>(R.id.btnLogout)
@@ -1030,6 +1212,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     override fun onDestroy() {
         super.onDestroy()
+        SyncEngine.removeListener(syncListener)
         mainHandler.removeCallbacks(clockTicker)
         try {
             unregisterReceiver(locationStateReceiver)

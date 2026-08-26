@@ -2,9 +2,7 @@ package com.example.geoalarm.network
 
 import android.content.Context
 import android.util.Log
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import com.example.geoalarm.storage.LocalEventDatabaseHelper
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -37,37 +35,28 @@ object EventReporter {
         latitude: Double = 0.0,
         longitude: Double = 0.0
     ) {
-        ApiClient.init(context)
-
         val isoTimestamp = getIsoTimestamp()
-        val eventItem = LocationEventItem(
-            jobId = jobId,
-            location = LocationCoordinate(latitude, longitude),
-            timestamp = isoTimestamp,
-            eventType = eventType
-        )
-
-        val request = LocationEventRequest(events = listOf(eventItem))
-        
         val displayJob = jobId ?: "Device"
-        addLocalLog("Event triggered: $eventType ($displayJob)")
+        addLocalLog("Event recorded: $eventType ($displayJob)")
 
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                Log.d(TAG, "Dispatching event: $eventType for job: $jobId ($latitude, $longitude)")
-                val response = ApiClient.apiService.postLocationEvents(request)
-                if (response.isSuccessful) {
-                    val body = response.body()
-                    Log.d(TAG, "✓ Event accepted by Admin Panel! TX: ${body?.transactionId}")
-                    addLocalLog("✓ Event logged: $eventType. TX: ${body?.transactionId?.take(8)}")
-                } else {
-                    Log.e(TAG, "Event rejected with code: ${response.code()} - ${response.errorBody()?.string()}")
-                    addLocalLog("⚠ Event rejected: $eventType (HTTP ${response.code()})")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to send event to backend: ${e.message}")
-                addLocalLog("⚠ Failed to send event to backend: ${e.message}")
-            }
+        try {
+            // 1. ALWAYS persist event to 3-day local SQLite database first
+            val db = LocalEventDatabaseHelper.getInstance(context)
+            val recordId = db.insertEvent(
+                eventType = eventType,
+                jobId = jobId,
+                latitude = latitude,
+                longitude = longitude,
+                timestamp = isoTimestamp,
+                isSynced = false
+            )
+            Log.d(TAG, "Persisted event $recordId locally ($eventType). Triggering auto-sync...")
+
+            // 2. Trigger auto-sync engine (flushes immediately if online, holds safely if offline)
+            SyncEngine.triggerSync(context)
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error recording local event: ${e.message}", e)
         }
     }
 
