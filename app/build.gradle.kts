@@ -14,8 +14,8 @@ android {
         applicationId = "com.example.geoalarm"
         minSdk = 24
         targetSdk = 36
-        versionCode = 2
-        versionName = "2.1"
+        versionCode = 3
+        versionName = "2.2"
 
         // --- THE VAULT READER ---
         val keystoreProperties = Properties()
