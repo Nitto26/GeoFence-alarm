@@ -1,5 +1,6 @@
 package com.example.geoalarm
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.text.method.HideReturnsTransformationMethod
@@ -14,6 +15,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.example.geoalarm.network.ApiClient
 import com.example.geoalarm.network.EventReporter
+import com.example.geoalarm.network.WorkerProfile
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -37,6 +39,9 @@ class LoginActivity : AppCompatActivity() {
         val btnLogin = findViewById<MaterialButton>(R.id.btnLogin)
         val tvConnectionStatus = findViewById<TextView>(R.id.tvConnectionStatus)
 
+        // Display current active cloud server
+        tvConnectionStatus?.text = "Server: ${ApiClient.getBaseUrl()}"
+
         // Password visibility toggle
         ivTogglePassword?.setOnClickListener {
             isPasswordVisible = !isPasswordVisible
@@ -53,27 +58,53 @@ class LoginActivity : AppCompatActivity() {
         // Login Button
         btnLogin?.setOnClickListener {
             val username = etUsername.text.toString().trim()
-            val workerId = if (username.isNotEmpty()) username else "WORKER-1001"
+            val workerId = if (username.isNotEmpty()) username else "TL-8801"
 
             btnLogin.isEnabled = false
             btnLogin.text = "Authenticating..."
-            tvConnectionStatus?.text = "Connecting to Server..."
+            tvConnectionStatus?.text = "Connecting to ${ApiClient.getBaseUrl()}..."
 
             lifecycleScope.launch(Dispatchers.IO) {
                 try {
-                    Log.d(TAG, "Fetching schedule for worker: $workerId from: ${ApiClient.getBaseUrl()}api/mobile/jobs")
+                    Log.d(TAG, "Fetching profile & schedule for worker: $workerId from: ${ApiClient.getBaseUrl()}")
                     
-                    // 1. Fetch assigned jobs from backend
+                    // 1. Fetch worker profile
+                    var workerName = workerId
+                    var workerDesignation = "Field Technician"
+                    var workerPhone = ""
+                    try {
+                        val profileRes = ApiClient.apiService.getWorkerProfile(workerId = workerId)
+                        if (profileRes.isSuccessful && profileRes.body() != null) {
+                            val p = profileRes.body()!!
+                            workerName = p.name
+                            workerDesignation = p.designation ?: "Field Technician"
+                            workerPhone = p.phone ?: ""
+                        }
+                    } catch (pe: Exception) {
+                        Log.w(TAG, "Profile fetch notice: ${pe.message}")
+                    }
+
+                    // Save worker session
+                    val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+                    userPrefs.edit()
+                        .putString("WORKER_ID", workerId)
+                        .putString("WORKER_NAME", workerName)
+                        .putString("WORKER_DESIGNATION", workerDesignation)
+                        .putString("WORKER_PHONE", workerPhone)
+                        .apply()
+
+                    // 2. Fetch assigned jobs from backend
                     val response = ApiClient.apiService.getJobs(workerId = workerId)
 
                     withContext(Dispatchers.Main) {
                         btnLogin.isEnabled = true
                         btnLogin.text = "Login"
+                        tvConnectionStatus?.text = "Server: ${ApiClient.getBaseUrl()}"
 
                         if (response.isSuccessful) {
                             val jobs = response.body()?.jobs ?: emptyList()
                             
-                            // 2. Dispatch immediate Login event to backend
+                            // 3. Dispatch immediate Login event to backend
                             EventReporter.reportEvent(
                                 context = this@LoginActivity,
                                 eventType = "login",
@@ -84,10 +115,10 @@ class LoginActivity : AppCompatActivity() {
 
                             Toast.makeText(
                                 this@LoginActivity,
-                                "✓ Welcome! Active assignments loaded (${jobs.size} jobs)",
+                                "Welcome, $workerName! (${jobs.size} active shifts)",
                                 Toast.LENGTH_SHORT
                             ).show()
-                            proceedToMain()
+                            proceedToMain(workerId, workerName)
                         } else {
                             showConnectionFailedDialog(
                                 "Server returned HTTP ${response.code()}.\nPlease check your credentials or network."
@@ -116,14 +147,19 @@ class LoginActivity : AppCompatActivity() {
             .setTitle("Connection Notice")
             .setMessage(details)
             .setPositiveButton("Enter (Offline Mode)") { _, _ ->
-                proceedToMain()
+                val etUsername = findViewById<EditText>(R.id.etUsername)
+                val u = etUsername.text.toString().trim().ifEmpty { "TL-8801" }
+                proceedToMain(u, u)
             }
             .setNegativeButton("Retry", null)
             .show()
     }
 
-    private fun proceedToMain() {
-        val intent = Intent(this, MainActivity::class.java)
+    private fun proceedToMain(workerId: String = "TL-8801", workerName: String = "Worker") {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            putExtra("EXTRA_WORKER_ID", workerId)
+            putExtra("EXTRA_WORKER_NAME", workerName)
+        }
         startActivity(intent)
         finish()
     }

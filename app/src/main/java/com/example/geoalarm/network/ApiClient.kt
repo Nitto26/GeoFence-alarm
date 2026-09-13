@@ -14,27 +14,19 @@ object ApiClient {
     private const val PREFS_NAME = "ServerSettingsPrefs"
     private const val KEY_BASE_URL = "BASE_URL"
     
-    // Built-in Render Deployment URL (Update this constant whenever your Render domain changes)
+    // Built-in Render Production Backend URL
     const val DEFAULT_RENDER_URL = "https://sgs-field-tracker-backend.onrender.com/"
     const val DEFAULT_BASE_URL = DEFAULT_RENDER_URL
 
-    private var currentBaseUrl = DEFAULT_BASE_URL
+    private var currentBaseUrl = DEFAULT_RENDER_URL
     private var retrofitInstance: Retrofit? = null
 
     fun init(context: Context) {
+        // Always force the built-in Render server URL and overwrite any old cached URLs
+        currentBaseUrl = DEFAULT_RENDER_URL
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val savedUrl = prefs.getString(KEY_BASE_URL, DEFAULT_BASE_URL) ?: DEFAULT_BASE_URL
+        prefs.edit().putString(KEY_BASE_URL, DEFAULT_RENDER_URL).apply()
         
-        // Safe check on load
-        if (isValidUrl(savedUrl)) {
-            currentBaseUrl = savedUrl
-        } else {
-            currentBaseUrl = DEFAULT_BASE_URL
-        }
-        
-        if (!currentBaseUrl.endsWith("/")) {
-            currentBaseUrl += "/"
-        }
         buildRetrofit()
     }
 
@@ -53,7 +45,6 @@ object ApiClient {
         return try {
             val uri = URI.create(formatted)
             val host = uri.host
-            // Basic Retrofit sanity check
             Retrofit.Builder().baseUrl(formatted).build()
             !host.isNullOrEmpty()
         } catch (e: Exception) {
@@ -90,9 +81,9 @@ object ApiClient {
 
         val okHttpClient = OkHttpClient.Builder()
             .addInterceptor(logging)
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
-            .writeTimeout(15, TimeUnit.SECONDS)
+            .connectTimeout(20, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .writeTimeout(20, TimeUnit.SECONDS)
             .build()
 
         try {
@@ -102,10 +93,9 @@ object ApiClient {
                 .addConverterFactory(GsonConverterFactory.create())
                 .build()
         } catch (e: Exception) {
-            // Fallback to default base url to prevent crashes
-            currentBaseUrl = DEFAULT_BASE_URL
+            currentBaseUrl = DEFAULT_RENDER_URL
             retrofitInstance = Retrofit.Builder()
-                .baseUrl(DEFAULT_BASE_URL)
+                .baseUrl(DEFAULT_RENDER_URL)
                 .client(okHttpClient)
                 .addConverterFactory(GsonConverterFactory.create())
                 .build()

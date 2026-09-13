@@ -4,6 +4,7 @@ import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.Path
 import retrofit2.http.Query
 
 interface ApiService {
@@ -17,4 +18,9 @@ interface ApiService {
     suspend fun postLocationEvents(
         @Body request: LocationEventRequest
     ): Response<LocationEventResponse>
+
+    @GET("api/workers/{worker_id}")
+    suspend fun getWorkerProfile(
+        @Path("worker_id") workerId: String
+    ): Response<WorkerProfile>
 }

@@ -19,6 +19,7 @@ data class MobileJobsResponse(
 
 data class LocationEventItem(
     @SerializedName("job_id") val jobId: String? = null,
+    @SerializedName("worker_id") val workerId: String? = null,
     @SerializedName("location") val location: LocationCoordinate,
     @SerializedName("timestamp") val timestamp: String,
     @SerializedName("event_type") val eventType: String
@@ -34,4 +35,15 @@ data class LocationEventResponse(
     @SerializedName("accepted_events") val acceptedEvents: Int = 0,
     @SerializedName("rejected_events") val rejectedEvents: Int = 0,
     @SerializedName("transaction_id") val transactionId: String? = null
+)
+
+data class WorkerProfile(
+    @SerializedName("id") val id: String? = null,
+    @SerializedName("name") val name: String,
+    @SerializedName("tally_id") val tallyId: String,
+    @SerializedName("designation") val designation: String? = null,
+    @SerializedName("phone") val phone: String? = null,
+    @SerializedName("email") val email: String? = null,
+    @SerializedName("grade") val grade: String? = null,
+    @SerializedName("worker_type") val workerType: String? = null
 )

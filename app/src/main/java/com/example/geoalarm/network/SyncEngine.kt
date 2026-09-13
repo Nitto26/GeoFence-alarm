@@ -156,8 +156,12 @@ object SyncEngine {
 
                     Log.d(TAG, "Flushing batch of ${unsyncedRecords.size} unsynced local events to backend...")
 
+                    val userPrefs = appCtx.getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+                    val activeWorkerId = userPrefs.getString("WORKER_ID", "TL-8801")
+
                     val items = unsyncedRecords.map { record ->
                         LocationEventItem(
+                            workerId = activeWorkerId,
                             jobId = record.jobId,
                             location = LocationCoordinate(record.latitude, record.longitude),
                             timestamp = record.timestamp,
@@ -173,7 +177,7 @@ object SyncEngine {
                         val recordIds = unsyncedRecords.map { it.id }
                         db.markEventsAsSynced(recordIds)
                         totalSyncedThisRound += recordIds.size
-                        Log.d(TAG, "✓ Batch of ${recordIds.size} events synced successfully!")
+                        Log.d(TAG, "âœ“ Batch of ${recordIds.size} events synced successfully!")
                     } else {
                         Log.e(TAG, "Server responded with error HTTP ${response.code()}")
                         break
@@ -181,7 +185,7 @@ object SyncEngine {
                 }
 
                 if (totalSyncedThisRound > 0) {
-                    EventReporter.addLocalLog("✓ Flushed $totalSyncedThisRound events to server")
+                    EventReporter.addLocalLog("âœ“ Flushed $totalSyncedThisRound events to server")
                 }
 
             } catch (e: Exception) {

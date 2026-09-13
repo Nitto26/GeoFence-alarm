@@ -100,6 +100,12 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     // Live Jobs from Admin Panel Backend
     private var liveJobs: List<JobItem> = emptyList()
 
+    // Logged in Worker Profile
+    private var loggedInWorkerId: String = "TL-8801"
+    private var loggedInWorkerName: String = "Worker"
+    private var loggedInWorkerDesignation: String = "Field Technician"
+    private var loggedInWorkerPhone: String = ""
+
     // Map Markers Cache
     private val worksiteMarkers = mutableMapOf<String, Marker>()
     private var accommodationMarker: Marker? = null
@@ -203,6 +209,15 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         geofencingClient = LocationServices.getGeofencingClient(this)
         viewFlipper = findViewById(R.id.viewFlipperMain)
 
+        // Load Active Worker Session
+        val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+        loggedInWorkerId = intent.getStringExtra("EXTRA_WORKER_ID") ?: userPrefs.getString("WORKER_ID", "TL-8801") ?: "TL-8801"
+        loggedInWorkerName = intent.getStringExtra("EXTRA_WORKER_NAME") ?: userPrefs.getString("WORKER_NAME", "Worker") ?: "Worker"
+        loggedInWorkerDesignation = userPrefs.getString("WORKER_DESIGNATION", "Field Technician") ?: "Field Technician"
+        loggedInWorkerPhone = userPrefs.getString("WORKER_PHONE", "") ?: ""
+
+        updateWorkerProfileViews()
+
         // Initialize UI Tabs and Navigation
         setupBottomNavigation()
         setupHomeInteractions()
@@ -260,7 +275,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 Log.d(TAG, "Connecting to backend at: ${ApiClient.getBaseUrl()}api/mobile/jobs...")
-                val response = ApiClient.apiService.getJobs(workerId = "WORKER-1001")
+                val response = ApiClient.apiService.getJobs(workerId = loggedInWorkerId)
                 
                 withContext(Dispatchers.Main) {
                     if (response.isSuccessful) {
@@ -284,6 +299,25 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     Toast.makeText(this@MainActivity, "Offline Mode", Toast.LENGTH_SHORT).show()
                 }
             }
+        }
+    }
+
+        private fun updateWorkerProfileViews() {
+        val tvHomeUserName = findViewById<TextView>(R.id.tvHomeUserName)
+        val tvHomeTallyNo = findViewById<TextView>(R.id.tvHomeTallyNo)
+        val tvProfileName = findViewById<TextView>(R.id.tvProfileName)
+        val tvProfileTallyNo = findViewById<TextView>(R.id.tvProfileTallyNo)
+        val tvProfileDepartment = findViewById<TextView>(R.id.tvProfileDepartment)
+        val tvProfilePhone = findViewById<TextView>(R.id.tvProfilePhone)
+
+        tvHomeUserName?.text = loggedInWorkerName
+        tvHomeTallyNo?.text = "Tally ID: $loggedInWorkerId"
+
+        tvProfileName?.text = loggedInWorkerName
+        tvProfileTallyNo?.text = "ID: $loggedInWorkerId"
+        tvProfileDepartment?.text = loggedInWorkerDesignation
+        if (loggedInWorkerPhone.isNotEmpty()) {
+            tvProfilePhone?.text = loggedInWorkerPhone
         }
     }
 
@@ -344,7 +378,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val logs = EventReporter.liveSystemLogs
 
         val builder = AlertDialog.Builder(context)
-        builder.setTitle("⚡ System Logs & Activity")
+        builder.setTitle("Ã¢Å¡Â¡ System Logs & Activity")
 
         val scrollView = ScrollView(context)
         val container = LinearLayout(context).apply {
@@ -365,7 +399,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     textSize = 12.5f
                     typeface = Typeface.MONOSPACE
                     setPadding(0, 8, 0, 8)
-                    setTextColor(if (log.contains("⚠") || log.contains("location_off")) Color.parseColor("#E11D48") else Color.parseColor("#334155"))
+                    setTextColor(if (log.contains("Ã¢Å¡Â ") || log.contains("location_off")) Color.parseColor("#E11D48") else Color.parseColor("#334155"))
                 }
                 container.addView(logItem)
             }
@@ -437,10 +471,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     tvTime?.text = rec.timestamp.replace("T", " ").take(19)
 
                     if (rec.isSynced) {
-                        tvStatus?.text = "✓ SYNCED"
+                        tvStatus?.text = "Ã¢Å“â€œ SYNCED"
                         tvStatus?.setTextColor(Color.parseColor("#16A34A"))
                     } else {
-                        tvStatus?.text = "⏳ PENDING"
+                        tvStatus?.text = "Ã¢ÂÂ³ PENDING"
                         tvStatus?.setTextColor(Color.parseColor("#D97706"))
                     }
 
@@ -462,7 +496,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     btnForceSyncDialog.text = "Force Sync Now"
                     refreshAuditUi()
                     if (success) {
-                        Toast.makeText(context, "✓ Offline sync complete! All events delivered.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Ã¢Å“â€œ Offline sync complete! All events delivered.", Toast.LENGTH_SHORT).show()
                     } else {
                         Toast.makeText(context, "Sync paused (check network connection)", Toast.LENGTH_SHORT).show()
                     }
@@ -636,10 +670,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 latitude = 10.5276,
                 longitude = 76.2144
             )
-            EventReporter.addLocalLog("✓ Worker Clocked In. Background radar & geofences armed.")
+            EventReporter.addLocalLog("Ã¢Å“â€œ Worker Clocked In. Background radar & geofences armed.")
 
             updateClockInOutUi(true)
-            Toast.makeText(this, "✓ Clocked In! Background tracking active & armed.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Ã¢Å“â€œ Clocked In! Background tracking active & armed.", Toast.LENGTH_SHORT).show()
 
         } else {
             // CLOCK OUT ACTION
@@ -669,10 +703,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 latitude = 10.5276,
                 longitude = 76.2144
             )
-            EventReporter.addLocalLog("⏸ Worker Clocked Out. System entered sleep mode.")
+            EventReporter.addLocalLog("Ã¢ÂÂ¸ Worker Clocked Out. System entered sleep mode.")
 
             updateClockInOutUi(false)
-            Toast.makeText(this, "⏸ Clocked Out. App is now sleeping (Zero background usage).", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Ã¢ÂÂ¸ Clocked Out. App is now sleeping (Zero background usage).", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -686,7 +720,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         if (isClockedIn) {
             tvAttendanceStatus?.text = "Clocked In"
             tvAttendanceStatus?.setTextColor(getColor(R.color.status_green))
-            tvAttendanceSubtitle?.text = "Tracking active • Background armed"
+            tvAttendanceSubtitle?.text = "Tracking active Ã¢â‚¬Â¢ Background armed"
             ivAttendanceIcon?.setColorFilter(getColor(R.color.status_green))
 
             btnClockToggle?.text = "Clock Out"
@@ -700,7 +734,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         } else {
             tvAttendanceStatus?.text = "Clocked Out"
             tvAttendanceStatus?.setTextColor(getColor(R.color.text_secondary))
-            tvAttendanceSubtitle?.text = "App is sleeping • No background tracking"
+            tvAttendanceSubtitle?.text = "App is sleeping Ã¢â‚¬Â¢ No background tracking"
             ivAttendanceIcon?.setColorFilter(getColor(R.color.text_muted))
 
             btnClockToggle?.text = "Clock In"
@@ -1095,6 +1129,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 .setTitle("Log Out")
                 .setMessage("Are you sure you want to log out?")
                 .setPositiveButton("Log Out") { _, _ ->
+                    val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+                    userPrefs.edit().clear().apply()
                     // Stop background service on logout
                     stopService(Intent(this, RadarService::class.java))
                     AlarmController.stopAlarm(this)
