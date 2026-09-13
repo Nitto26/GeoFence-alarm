@@ -19,6 +19,11 @@ interface ApiService {
         @Body request: LocationEventRequest
     ): Response<LocationEventResponse>
 
+    @POST("api/mobile/login")
+    suspend fun login(
+        @Body request: MobileLoginRequest
+    ): Response<MobileLoginResponse>
+
     @GET("api/workers/{worker_id}")
     suspend fun getWorkerProfile(
         @Path("worker_id") workerId: String

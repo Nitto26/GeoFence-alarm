@@ -45,5 +45,19 @@ data class WorkerProfile(
     @SerializedName("phone") val phone: String? = null,
     @SerializedName("email") val email: String? = null,
     @SerializedName("grade") val grade: String? = null,
-    @SerializedName("worker_type") val workerType: String? = null
+    @SerializedName("worker_type") val workerType: String? = null,
+    @SerializedName("is_active") val isActive: Boolean? = true
+)
+
+data class MobileLoginRequest(
+    @SerializedName("worker_id") val workerId: String,
+    @SerializedName("password") val password: String? = null
+)
+
+data class MobileLoginResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("message") val message: String? = null,
+    @SerializedName("worker") val worker: WorkerProfile? = null,
+    @SerializedName("jobs") val jobs: List<JobItem>? = null,
+    @SerializedName("transaction_id") val transactionId: String? = null
 )

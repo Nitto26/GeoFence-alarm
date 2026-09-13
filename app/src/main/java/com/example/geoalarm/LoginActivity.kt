@@ -15,11 +15,13 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.example.geoalarm.network.ApiClient
 import com.example.geoalarm.network.EventReporter
+import com.example.geoalarm.network.MobileLoginRequest
 import com.example.geoalarm.network.WorkerProfile
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 class LoginActivity : AppCompatActivity() {
 
@@ -42,6 +44,13 @@ class LoginActivity : AppCompatActivity() {
         // Display current active cloud server
         tvConnectionStatus?.text = "Server: ${ApiClient.getBaseUrl()}"
 
+        // Pre-fill last logged in worker ID if available
+        val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+        val savedWorkerId = userPrefs.getString("WORKER_ID", "")
+        if (!savedWorkerId.isNullOrEmpty()) {
+            etUsername.setText(savedWorkerId)
+        }
+
         // Password visibility toggle
         ivTogglePassword?.setOnClickListener {
             isPasswordVisible = !isPasswordVisible
@@ -58,7 +67,13 @@ class LoginActivity : AppCompatActivity() {
         // Login Button
         btnLogin?.setOnClickListener {
             val username = etUsername.text.toString().trim()
-            val workerId = if (username.isNotEmpty()) username else "TL-8801"
+            val password = etPassword.text.toString().trim()
+
+            if (username.isEmpty()) {
+                etUsername.error = "Please enter your Tally ID / Worker ID"
+                etUsername.requestFocus()
+                return@setOnClickListener
+            }
 
             btnLogin.isEnabled = false
             btnLogin.text = "Authenticating..."
@@ -66,67 +81,93 @@ class LoginActivity : AppCompatActivity() {
 
             lifecycleScope.launch(Dispatchers.IO) {
                 try {
-                    Log.d(TAG, "Fetching profile & schedule for worker: $workerId from: ${ApiClient.getBaseUrl()}")
+                    Log.d(TAG, "Authenticating worker: $username against ${ApiClient.getBaseUrl()}")
                     
-                    // 1. Fetch worker profile
-                    var workerName = workerId
-                    var workerDesignation = "Field Technician"
-                    var workerPhone = ""
-                    try {
-                        val profileRes = ApiClient.apiService.getWorkerProfile(workerId = workerId)
-                        if (profileRes.isSuccessful && profileRes.body() != null) {
-                            val p = profileRes.body()!!
-                            workerName = p.name
-                            workerDesignation = p.designation ?: "Field Technician"
-                            workerPhone = p.phone ?: ""
-                        }
-                    } catch (pe: Exception) {
-                        Log.w(TAG, "Profile fetch notice: ${pe.message}")
-                    }
-
-                    // Save worker session
-                    val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
-                    userPrefs.edit()
-                        .putString("WORKER_ID", workerId)
-                        .putString("WORKER_NAME", workerName)
-                        .putString("WORKER_DESIGNATION", workerDesignation)
-                        .putString("WORKER_PHONE", workerPhone)
-                        .apply()
-
-                    // 2. Fetch assigned jobs from backend
-                    val response = ApiClient.apiService.getJobs(workerId = workerId)
+                    val loginRequest = MobileLoginRequest(
+                        workerId = username,
+                        password = password.ifEmpty { null }
+                    )
+                    
+                    val response = ApiClient.apiService.login(loginRequest)
 
                     withContext(Dispatchers.Main) {
                         btnLogin.isEnabled = true
                         btnLogin.text = "Login"
                         tvConnectionStatus?.text = "Server: ${ApiClient.getBaseUrl()}"
 
-                        if (response.isSuccessful) {
-                            val jobs = response.body()?.jobs ?: emptyList()
-                            
-                            // 3. Dispatch immediate Login event to backend
-                            EventReporter.reportEvent(
-                                context = this@LoginActivity,
-                                eventType = "login",
-                                jobId = if (jobs.isNotEmpty()) jobs[0].jobId else workerId,
-                                latitude = 10.5276,
-                                longitude = 76.2144
-                            )
+                        if (response.isSuccessful && response.body() != null) {
+                            val body = response.body()!!
+                            val worker = body.worker
+                            val jobs = body.jobs ?: emptyList()
 
-                            Toast.makeText(
-                                this@LoginActivity,
-                                "Welcome, $workerName! (${jobs.size} active shifts)",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                            proceedToMain(workerId, workerName)
+                            if (worker != null) {
+                                val workerId = worker.tallyId.ifEmpty { worker.id ?: username }
+                                val workerName = worker.name
+                                val workerDesignation = worker.designation ?: "Field Technician"
+                                val workerPhone = worker.phone ?: ""
+
+                                // Save strictly verified worker session
+                                userPrefs.edit()
+                                    .putString("WORKER_ID", workerId)
+                                    .putString("WORKER_NAME", workerName)
+                                    .putString("WORKER_DESIGNATION", workerDesignation)
+                                    .putString("WORKER_PHONE", workerPhone)
+                                    .apply()
+
+                                // Dispatch Login event to backend
+                                EventReporter.reportEvent(
+                                    context = this@LoginActivity,
+                                    eventType = "login",
+                                    jobId = if (jobs.isNotEmpty()) jobs[0].jobId else workerId,
+                                    latitude = 10.5276,
+                                    longitude = 76.2144
+                                )
+
+                                Toast.makeText(
+                                    this@LoginActivity,
+                                    "Welcome, $workerName!",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+
+                                proceedToMain(workerId, workerName)
+                            } else {
+                                showAuthErrorDialog(
+                                    title = "Authentication Error",
+                                    message = "Worker data was not returned by server."
+                                )
+                            }
                         } else {
-                            showConnectionFailedDialog(
-                                "Server returned HTTP ${response.code()}.\nPlease check your credentials or network."
+                            // Parse server error message from JSON errorBody
+                            val statusCode = response.code()
+                            var errorMsg = when (statusCode) {
+                                401 -> "Worker '$username' is not registered in the system.\n\nPlease register this worker on the Web Dashboard first."
+                                403 -> "Worker account is deactivated.\n\nPlease contact your supervisor or administrator."
+                                404 -> "Worker record not found on the server."
+                                else -> "Server returned error (HTTP $statusCode)."
+                            }
+
+                            try {
+                                val rawErr = response.errorBody()?.string()
+                                if (!rawErr.isNullOrEmpty()) {
+                                    val json = JSONObject(rawErr)
+                                    if (json.has("message")) {
+                                        errorMsg = json.getString("message")
+                                    } else if (json.has("detail")) {
+                                        errorMsg = json.getString("detail")
+                                    }
+                                }
+                            } catch (parseEx: Exception) {
+                                Log.w(TAG, "Error parsing server error body: ${parseEx.message}")
+                            }
+
+                            showAuthErrorDialog(
+                                title = if (statusCode == 403) "Access Denied" else "Login Failed",
+                                message = errorMsg
                             )
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Connection failed: ${e.message}")
+                    Log.e(TAG, "Login network failure: ${e.message}")
                     withContext(Dispatchers.Main) {
                         btnLogin.isEnabled = true
                         btnLogin.text = "Login"
@@ -134,7 +175,7 @@ class LoginActivity : AppCompatActivity() {
                         showConnectionFailedDialog(
                             "Could not reach server at ${ApiClient.getBaseUrl()}.\n\n" +
                             "Error: ${e.message ?: "Network timeout"}\n\n" +
-                            "Would you like to enter in offline mode?"
+                            "Please check your internet connection and try again."
                         )
                     }
                 }
@@ -142,20 +183,25 @@ class LoginActivity : AppCompatActivity() {
         }
     }
 
-    private fun showConnectionFailedDialog(details: String) {
+    private fun showAuthErrorDialog(title: String, message: String) {
         AlertDialog.Builder(this)
-            .setTitle("Connection Notice")
-            .setMessage(details)
-            .setPositiveButton("Enter (Offline Mode)") { _, _ ->
-                val etUsername = findViewById<EditText>(R.id.etUsername)
-                val u = etUsername.text.toString().trim().ifEmpty { "TL-8801" }
-                proceedToMain(u, u)
-            }
-            .setNegativeButton("Retry", null)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton("OK", null)
+            .setIcon(android.R.drawable.ic_dialog_alert)
             .show()
     }
 
-    private fun proceedToMain(workerId: String = "TL-8801", workerName: String = "Worker") {
+    private fun showConnectionFailedDialog(details: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Connection Error")
+            .setMessage(details)
+            .setPositiveButton("Retry", null)
+            .setIcon(android.R.drawable.ic_dialog_alert)
+            .show()
+    }
+
+    private fun proceedToMain(workerId: String, workerName: String) {
         val intent = Intent(this, MainActivity::class.java).apply {
             putExtra("EXTRA_WORKER_ID", workerId)
             putExtra("EXTRA_WORKER_NAME", workerName)

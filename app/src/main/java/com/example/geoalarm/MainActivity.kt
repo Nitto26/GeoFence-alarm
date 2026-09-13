@@ -101,9 +101,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private var liveJobs: List<JobItem> = emptyList()
 
     // Logged in Worker Profile
-    private var loggedInWorkerId: String = "TL-8801"
-    private var loggedInWorkerName: String = "Worker"
-    private var loggedInWorkerDesignation: String = "Field Technician"
+    private var loggedInWorkerId: String = ""
+    private var loggedInWorkerName: String = ""
+    private var loggedInWorkerDesignation: String = ""
     private var loggedInWorkerPhone: String = ""
 
     // Map Markers Cache
@@ -211,7 +211,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         // Load Active Worker Session
         val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
-        loggedInWorkerId = intent.getStringExtra("EXTRA_WORKER_ID") ?: userPrefs.getString("WORKER_ID", "TL-8801") ?: "TL-8801"
+        val savedWorkerId = intent.getStringExtra("EXTRA_WORKER_ID") ?: userPrefs.getString("WORKER_ID", null)
+        if (savedWorkerId.isNullOrEmpty()) {
+            val intent = Intent(this, LoginActivity::class.java)
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            startActivity(intent)
+            finish()
+            return
+        }
+
+        loggedInWorkerId = savedWorkerId
         loggedInWorkerName = intent.getStringExtra("EXTRA_WORKER_NAME") ?: userPrefs.getString("WORKER_NAME", "Worker") ?: "Worker"
         loggedInWorkerDesignation = userPrefs.getString("WORKER_DESIGNATION", "Field Technician") ?: "Field Technician"
         loggedInWorkerPhone = userPrefs.getString("WORKER_PHONE", "") ?: ""

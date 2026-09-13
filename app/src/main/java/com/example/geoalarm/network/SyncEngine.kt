@@ -157,7 +157,7 @@ object SyncEngine {
                     Log.d(TAG, "Flushing batch of ${unsyncedRecords.size} unsynced local events to backend...")
 
                     val userPrefs = appCtx.getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
-                    val activeWorkerId = userPrefs.getString("WORKER_ID", "TL-8801")
+                    val activeWorkerId = userPrefs.getString("WORKER_ID", "") ?: ""
 
                     val items = unsyncedRecords.map { record ->
                         LocationEventItem(
