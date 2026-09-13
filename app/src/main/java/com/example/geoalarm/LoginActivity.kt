@@ -28,21 +28,17 @@ class LoginActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_login)
 
-        // Initialize API Client
+        // Initialize API Client with built-in Render server URL
         ApiClient.init(this)
 
+        val etUsername = findViewById<EditText>(R.id.etUsername)
         val etPassword = findViewById<EditText>(R.id.etPassword)
         val ivTogglePassword = findViewById<ImageView>(R.id.ivTogglePassword)
         val btnLogin = findViewById<MaterialButton>(R.id.btnLogin)
-        val etServerUrl = findViewById<EditText>(R.id.etServerUrl)
         val tvConnectionStatus = findViewById<TextView>(R.id.tvConnectionStatus)
 
-        // Pre-fill Server URL
-        val currentUrl = ApiClient.getBaseUrl()
-        etServerUrl.setText(currentUrl)
-
         // Password visibility toggle
-        ivTogglePassword.setOnClickListener {
+        ivTogglePassword?.setOnClickListener {
             isPasswordVisible = !isPasswordVisible
             if (isPasswordVisible) {
                 etPassword.transformationMethod = HideReturnsTransformationMethod.getInstance()
@@ -55,31 +51,20 @@ class LoginActivity : AppCompatActivity() {
         }
 
         // Login Button
-        btnLogin.setOnClickListener {
-            val serverInput = etServerUrl.text.toString().trim()
-            
-            // Validate URL before configuring Retrofit to prevent crashes
-            if (serverInput.isNotEmpty()) {
-                val success = ApiClient.setBaseUrl(this, serverInput)
-                if (!success) {
-                    Toast.makeText(this, "⚠ Please enter a valid Server URL", Toast.LENGTH_LONG).show()
-                    return@setOnClickListener
-                }
-            } else {
-                Toast.makeText(this, "⚠ Server URL cannot be empty", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
+        btnLogin?.setOnClickListener {
+            val username = etUsername.text.toString().trim()
+            val workerId = if (username.isNotEmpty()) username else "WORKER-1001"
 
             btnLogin.isEnabled = false
-            btnLogin.text = "Connecting..."
-            tvConnectionStatus.text = "Connecting to ${ApiClient.getBaseUrl()}..."
+            btnLogin.text = "Authenticating..."
+            tvConnectionStatus?.text = "Connecting to Server..."
 
             lifecycleScope.launch(Dispatchers.IO) {
                 try {
-                    Log.d(TAG, "Testing connection to: ${ApiClient.getBaseUrl()}api/mobile/jobs")
+                    Log.d(TAG, "Fetching schedule for worker: $workerId from: ${ApiClient.getBaseUrl()}api/mobile/jobs")
                     
-                    // 1. SEND API: Fetch assigned jobs from backend
-                    val response = ApiClient.apiService.getJobs(workerId = "WORKER-1001")
+                    // 1. Fetch assigned jobs from backend
+                    val response = ApiClient.apiService.getJobs(workerId = workerId)
 
                     withContext(Dispatchers.Main) {
                         btnLogin.isEnabled = true
@@ -88,24 +73,24 @@ class LoginActivity : AppCompatActivity() {
                         if (response.isSuccessful) {
                             val jobs = response.body()?.jobs ?: emptyList()
                             
-                            // 2. RECEIVE API: Send immediate Login event back to website
+                            // 2. Dispatch immediate Login event to backend
                             EventReporter.reportEvent(
                                 context = this@LoginActivity,
                                 eventType = "login",
-                                jobId = if (jobs.isNotEmpty()) jobs[0].jobId else "WORKER-1001",
+                                jobId = if (jobs.isNotEmpty()) jobs[0].jobId else workerId,
                                 latitude = 10.5276,
                                 longitude = 76.2144
                             )
 
                             Toast.makeText(
                                 this@LoginActivity,
-                                "✓ Connected to Laptop! Loaded ${jobs.size} jobs",
+                                "✓ Welcome! Active assignments loaded (${jobs.size} jobs)",
                                 Toast.LENGTH_SHORT
                             ).show()
                             proceedToMain()
                         } else {
                             showConnectionFailedDialog(
-                                "Server responded with HTTP ${response.code()}"
+                                "Server returned HTTP ${response.code()}.\nPlease check your credentials or network."
                             )
                         }
                     }
@@ -114,10 +99,11 @@ class LoginActivity : AppCompatActivity() {
                     withContext(Dispatchers.Main) {
                         btnLogin.isEnabled = true
                         btnLogin.text = "Login"
-                        tvConnectionStatus.text = "Connection failed: ${e.message}"
+                        tvConnectionStatus?.text = "Server offline / unreachable"
                         showConnectionFailedDialog(
-                            "Could not reach backend at ${ApiClient.getBaseUrl()}.\n\n" +
-                            "If testing over different networks (mobile data / different Wi-Fi), make sure to enter the public tunnel URL (e.g. https://...)."
+                            "Could not reach server at ${ApiClient.getBaseUrl()}.\n\n" +
+                            "Error: ${e.message ?: "Network timeout"}\n\n" +
+                            "Would you like to enter in offline mode?"
                         )
                     }
                 }
@@ -129,10 +115,10 @@ class LoginActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle("Connection Notice")
             .setMessage(details)
-            .setPositiveButton("Enter Anyway (Offline Demo)") { _, _ ->
+            .setPositiveButton("Enter (Offline Mode)") { _, _ ->
                 proceedToMain()
             }
-            .setNegativeButton("Edit Server IP", null)
+            .setNegativeButton("Retry", null)
             .show()
     }
 

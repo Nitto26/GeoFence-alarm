@@ -14,8 +14,9 @@ object ApiClient {
     private const val PREFS_NAME = "ServerSettingsPrefs"
     private const val KEY_BASE_URL = "BASE_URL"
     
-    // Default URL: 10.0.2.2 is localhost on Android Emulator
-    const val DEFAULT_BASE_URL = "http://10.0.2.2:8000/"
+    // Built-in Render Deployment URL (Update this constant whenever your Render domain changes)
+    const val DEFAULT_RENDER_URL = "https://sgs-field-tracker-backend.onrender.com/"
+    const val DEFAULT_BASE_URL = DEFAULT_RENDER_URL
 
     private var currentBaseUrl = DEFAULT_BASE_URL
     private var retrofitInstance: Retrofit? = null
@@ -44,7 +45,7 @@ object ApiClient {
         if (trimmed.isEmpty()) return false
         var formatted = trimmed
         if (!formatted.startsWith("http://") && !formatted.startsWith("https://")) {
-            formatted = "http://$formatted"
+            formatted = "https://$formatted"
         }
         if (!formatted.endsWith("/")) {
             formatted += "/"
@@ -64,7 +65,7 @@ object ApiClient {
         var formattedUrl = newUrl.trim()
         if (formattedUrl.isEmpty()) return false
         if (!formattedUrl.startsWith("http://") && !formattedUrl.startsWith("https://")) {
-            formattedUrl = "http://$formattedUrl"
+            formattedUrl = "https://$formattedUrl"
         }
         if (!formattedUrl.endsWith("/")) {
             formattedUrl += "/"
@@ -89,9 +90,9 @@ object ApiClient {
 
         val okHttpClient = OkHttpClient.Builder()
             .addInterceptor(logging)
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(10, TimeUnit.SECONDS)
-            .writeTimeout(10, TimeUnit.SECONDS)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(15, TimeUnit.SECONDS)
             .build()
 
         try {
