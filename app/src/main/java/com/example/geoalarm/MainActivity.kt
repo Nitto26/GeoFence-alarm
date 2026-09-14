@@ -109,6 +109,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private var loggedInWorkerName: String = ""
     private var loggedInWorkerDesignation: String = ""
     private var loggedInWorkerPhone: String = ""
+    private var loggedInWorkerTallyNo: String = ""
 
     // Map Markers Cache
     private val worksiteMarkers = mutableMapOf<String, Marker>()
@@ -117,9 +118,17 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     // Accommodation Location
     private val accommodationLatLng = LatLng(10.5182, 76.2090)
 
-    // Handlers for Clock and Shift Timer
+    // Handlers for Clock, Shift Timer, and Periodic Server Refresh
     private val mainHandler = Handler(Looper.getMainLooper())
     private var startTimeMillis = 0L
+
+    // 30-Second Automatic Server Sync Ticker (Profile & Worksites Real-Time Sync)
+    private val autoSyncTicker = object : Runnable {
+        override fun run() {
+            syncAndRefreshServerData(showUserFeedback = false)
+            mainHandler.postDelayed(this, 30_000L)
+        }
+    }
 
     // Secret 3-Tap Version Counter
     private var versionClickCount = 0
@@ -312,34 +321,46 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         // Start Live Clock and Shift Timer
         mainHandler.post(clockTicker)
 
+        // Start 30-second background auto-sync ticker for profile & worksite updates
+        mainHandler.postDelayed(autoSyncTicker, 30_000L)
+
         // Initialize Live Fused Location Tracking & Arrival Radar
         mainFusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         startLiveLocationTracking()
 
-        // Fetch Live Jobs from Admin Panel Backend
-        fetchLiveJobsFromBackend()
+        // Fetch Live Profile & Schedule from Admin Panel Backend
+        syncAndRefreshServerData(showUserFeedback = false)
     }
 
     // ==========================================
-    // BACKEND INTEGRATION: FETCH JOBS
+    // BACKEND INTEGRATION: SYNC & REFRESH DATA
     // ==========================================
-    private fun fetchLiveJobsFromBackend() {
+    private fun syncAndRefreshServerData(showUserFeedback: Boolean = false, onComplete: (() -> Unit)? = null) {
+        if (showUserFeedback) {
+            Toast.makeText(this, "Syncing latest data from server...", Toast.LENGTH_SHORT).show()
+        }
+
         lifecycleScope.launch(Dispatchers.IO) {
+            var jobsUpdated = false
+            var profileUpdated = false
+
+            // 1. Fetch Worksite Schedule from Server
             try {
                 Log.d(TAG, "Connecting to backend at: ${ApiClient.getBaseUrl()}api/mobile/jobs...")
                 val response = ApiClient.apiService.getJobs(workerId = loggedInWorkerId)
                 
-                withContext(Dispatchers.Main) {
-                    if (response.isSuccessful) {
-                        val jobs = response.body()?.jobs ?: emptyList()
-                        liveJobs = jobs
-                        val jobsJson = com.google.gson.Gson().toJson(jobs)
-                        getSharedPreferences("GeoPrefs", Context.MODE_PRIVATE)
-                            .edit()
-                            .putString("CACHED_JOBS_JSON", jobsJson)
-                            .apply()
+                if (response.isSuccessful) {
+                    val jobs = response.body()?.jobs ?: emptyList()
+                    liveJobs = jobs
+                    val jobsJson = com.google.gson.Gson().toJson(jobs)
+                    getSharedPreferences("GeoPrefs", Context.MODE_PRIVATE)
+                        .edit()
+                        .putString("CACHED_JOBS_JSON", jobsJson)
+                        .apply()
 
-                        EventReporter.addLocalLog("Schedule fetched successfully (${jobs.size} jobs)")
+                    jobsUpdated = true
+                    withContext(Dispatchers.Main) {
+                        EventReporter.addLocalLog("Schedule updated (${jobs.size} jobs)")
                         updateHomeUiWithLiveJobs(jobs)
                         updateWorkCalendarWithJobs(jobs)
                         if (hasLocationPermission()) {
@@ -358,22 +379,65 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                                 }
                             } catch (_: SecurityException) {}
                         }
-                    } else {
-                        EventReporter.addLocalLog("Failed to fetch schedule (HTTP ${response.code()})")
-                        Toast.makeText(this@MainActivity, "Server connection failed", Toast.LENGTH_SHORT).show()
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error connecting to Admin Panel: ${e.message}")
-                withContext(Dispatchers.Main) {
-                    EventReporter.addLocalLog("Failed to fetch schedule: ${e.message}")
-                    Toast.makeText(this@MainActivity, "Offline Mode", Toast.LENGTH_SHORT).show()
+                Log.e(TAG, "Failed to refresh schedule: ${e.message}")
+            }
+
+            // 2. Fetch Latest Worker Profile from Server (Auto-update name, designation, phone, tally ID)
+            try {
+                val workersResponse = ApiClient.apiService.getAllWorkers()
+                if (workersResponse.isSuccessful) {
+                    val workerList = workersResponse.body() ?: emptyList()
+                    val matchedWorker = workerList.find {
+                        it.id.equals(loggedInWorkerId, ignoreCase = true) ||
+                        it.tallyId.equals(loggedInWorkerId, ignoreCase = true) ||
+                        (loggedInWorkerTallyNo.isNotEmpty() && it.tallyId.equals(loggedInWorkerTallyNo, ignoreCase = true))
+                    }
+
+                    if (matchedWorker != null) {
+                        loggedInWorkerName = matchedWorker.name
+                        loggedInWorkerDesignation = matchedWorker.designation ?: "Field Technician"
+                        loggedInWorkerPhone = matchedWorker.phone ?: ""
+                        loggedInWorkerTallyNo = matchedWorker.tallyId
+
+                        val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+                        userPrefs.edit()
+                            .putString("WORKER_NAME", loggedInWorkerName)
+                            .putString("WORKER_DESIGNATION", loggedInWorkerDesignation)
+                            .putString("WORKER_PHONE", loggedInWorkerPhone)
+                            .putString("WORKER_TALLY_NO", loggedInWorkerTallyNo)
+                            .apply()
+
+                        profileUpdated = true
+                        withContext(Dispatchers.Main) {
+                            updateWorkerProfileViews()
+                            EventReporter.addLocalLog("Worker profile updated: $loggedInWorkerName ($loggedInWorkerDesignation)")
+                        }
+                    }
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to refresh worker profile: ${e.message}")
+            }
+
+            // 3. Trigger Offline SQLite Queue Sync
+            SyncEngine.triggerSync(this@MainActivity)
+
+            withContext(Dispatchers.Main) {
+                if (showUserFeedback) {
+                    if (jobsUpdated || profileUpdated) {
+                        Toast.makeText(this@MainActivity, "✓ Profile & Schedule updated from server", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this@MainActivity, "Server reachable, up to date", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                onComplete?.invoke()
             }
         }
     }
 
-        private fun updateWorkerProfileViews() {
+    private fun updateWorkerProfileViews() {
         val tvHomeUserName = findViewById<TextView>(R.id.tvHomeUserName)
         val tvHomeTallyNo = findViewById<TextView>(R.id.tvHomeTallyNo)
         val tvProfileName = findViewById<TextView>(R.id.tvProfileName)
@@ -382,10 +446,11 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val tvProfilePhone = findViewById<TextView>(R.id.tvProfilePhone)
 
         tvHomeUserName?.text = loggedInWorkerName
-        tvHomeTallyNo?.text = "Tally ID: $loggedInWorkerId"
+        val displayTally = if (loggedInWorkerTallyNo.isNotEmpty()) loggedInWorkerTallyNo else loggedInWorkerId
+        tvHomeTallyNo?.text = "Tally No. $displayTally"
 
         tvProfileName?.text = loggedInWorkerName
-        tvProfileTallyNo?.text = "ID: $loggedInWorkerId"
+        tvProfileTallyNo?.text = "ID: $displayTally"
         tvProfileDepartment?.text = loggedInWorkerDesignation
         if (loggedInWorkerPhone.isNotEmpty()) {
             tvProfilePhone?.text = loggedInWorkerPhone
@@ -682,6 +747,20 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         btnNextWorksiteArrow?.setOnClickListener(goToMapAction)
         btnGoToMap?.setOnClickListener(goToMapAction)
 
+        val ivRefreshData = findViewById<ImageView>(R.id.ivRefreshData)
+        ivRefreshData?.setOnClickListener {
+            val rotate = android.view.animation.RotateAnimation(
+                0f, 360f,
+                android.view.animation.Animation.RELATIVE_TO_SELF, 0.5f,
+                android.view.animation.Animation.RELATIVE_TO_SELF, 0.5f
+            ).apply {
+                duration = 600
+                repeatCount = 1
+            }
+            ivRefreshData.startAnimation(rotate)
+            syncAndRefreshServerData(showUserFeedback = true)
+        }
+
         // Notification Bell Click triggers logs dialog
         ivBell?.setOnClickListener {
             showLiveLogsDialog()
@@ -689,8 +768,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         // Tap Sync Badge to trigger immediate sync attempt
         layoutSyncBadge?.setOnClickListener {
-            Toast.makeText(this, "Checking synchronization...", Toast.LENGTH_SHORT).show()
-            SyncEngine.triggerSync(this)
+            syncAndRefreshServerData(showUserFeedback = true)
         }
 
         // Clock In / Clock Out Toggle Button Handler
@@ -1258,6 +1336,18 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             }
         }
 
+        val btnRefreshProfile = findViewById<MaterialButton>(R.id.btnRefreshProfile)
+        btnRefreshProfile?.setOnClickListener {
+            btnRefreshProfile.isEnabled = false
+            btnRefreshProfile.text = "Syncing with Server..."
+            syncAndRefreshServerData(showUserFeedback = true) {
+                runOnUiThread {
+                    btnRefreshProfile.isEnabled = true
+                    btnRefreshProfile.text = "Sync & Refresh Server Data"
+                }
+            }
+        }
+
         val btnLogout = findViewById<MaterialButton>(R.id.btnLogout)
         btnLogout?.setOnClickListener {
             AlertDialog.Builder(this)
@@ -1565,12 +1655,14 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             .getBoolean("IS_CLOCKED_IN", false)
         updateClockInOutUi(isClockedIn)
         startLiveLocationTracking()
+        syncAndRefreshServerData(showUserFeedback = false)
     }
 
     override fun onDestroy() {
         super.onDestroy()
         SyncEngine.removeListener(syncListener)
         mainHandler.removeCallbacks(clockTicker)
+        mainHandler.removeCallbacks(autoSyncTicker)
         if (mainLocationCallback != null) {
             try {
                 mainFusedLocationClient.removeLocationUpdates(mainLocationCallback!!)

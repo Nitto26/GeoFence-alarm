@@ -28,4 +28,7 @@ interface ApiService {
     suspend fun getWorkerProfile(
         @Path("worker_id") workerId: String
     ): Response<WorkerProfile>
+
+    @GET("api/workers")
+    suspend fun getAllWorkers(): Response<List<WorkerProfile>>
 }
