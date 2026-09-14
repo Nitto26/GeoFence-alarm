@@ -177,7 +177,7 @@ object SyncEngine {
                         val recordIds = unsyncedRecords.map { it.id }
                         db.markEventsAsSynced(recordIds)
                         totalSyncedThisRound += recordIds.size
-                        Log.d(TAG, "âœ“ Batch of ${recordIds.size} events synced successfully!")
+                        Log.d(TAG, "Synced batch of ${recordIds.size} events successfully!")
                     } else {
                         Log.e(TAG, "Server responded with error HTTP ${response.code()}")
                         break
@@ -185,7 +185,7 @@ object SyncEngine {
                 }
 
                 if (totalSyncedThisRound > 0) {
-                    EventReporter.addLocalLog("âœ“ Flushed $totalSyncedThisRound events to server")
+                    EventReporter.addLocalLog("Synced $totalSyncedThisRound events to server")
                 }
 
             } catch (e: Exception) {

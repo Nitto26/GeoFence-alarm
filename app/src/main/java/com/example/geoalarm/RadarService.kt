@@ -160,6 +160,9 @@ class RadarService : Service() {
                     return
                 }
 
+                val currentJobId = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
+                    .getString("ACTIVE_JOB_ID", "JOB-1001") ?: "JOB-1001"
+
                 for (location in locationResult.locations) {
                     val now = System.currentTimeMillis()
 
@@ -169,7 +172,7 @@ class RadarService : Service() {
                         EventReporter.reportEvent(
                             context = this@RadarService,
                             eventType = "ping",
-                            jobId = "JOB-1001",
+                            jobId = currentJobId,
                             latitude = location.latitude,
                             longitude = location.longitude
                         )
@@ -191,7 +194,7 @@ class RadarService : Service() {
                             EventReporter.reportEvent(
                                 context = this@RadarService,
                                 eventType = "entry",
-                                jobId = "JOB-1001",
+                                jobId = currentJobId,
                                 latitude = location.latitude,
                                 longitude = location.longitude
                             )

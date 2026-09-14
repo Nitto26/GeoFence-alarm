@@ -649,11 +649,11 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 return
             }
 
-            checkLocationSettings()
-
+             val activeJobId = if (liveJobs.isNotEmpty()) liveJobs[0].jobId else loggedInWorkerId
             sharedPrefs.edit()
                 .putBoolean("IS_CLOCKED_IN", true)
                 .putBoolean("IS_SYSTEM_ARMED", true)
+                .putString("ACTIVE_JOB_ID", activeJobId)
                 .putLong("CLOCK_IN_TIMESTAMP", System.currentTimeMillis())
                 .apply()
 
@@ -675,17 +675,18 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             EventReporter.reportEvent(
                 context = this,
                 eventType = "clock_in",
-                jobId = if (liveJobs.isNotEmpty()) liveJobs[0].jobId else "WORKER-1001",
+                jobId = activeJobId,
                 latitude = 10.5276,
                 longitude = 76.2144
             )
-            EventReporter.addLocalLog("Ã¢Å“â€œ Worker Clocked In. Background radar & geofences armed.")
+            EventReporter.addLocalLog("Worker Clocked In. Background radar & geofences armed.")
 
             updateClockInOutUi(true)
-            Toast.makeText(this, "Ã¢Å“â€œ Clocked In! Background tracking active & armed.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Clocked In! Background tracking active & armed.", Toast.LENGTH_SHORT).show()
 
         } else {
             // CLOCK OUT ACTION
+            val activeJobId = sharedPrefs.getString("ACTIVE_JOB_ID", if (liveJobs.isNotEmpty()) liveJobs[0].jobId else loggedInWorkerId) ?: loggedInWorkerId
             sharedPrefs.edit()
                 .putBoolean("IS_CLOCKED_IN", false)
                 .putBoolean("IS_SYSTEM_ARMED", false)
@@ -708,14 +709,14 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             EventReporter.reportEvent(
                 context = this,
                 eventType = "clock_out",
-                jobId = if (liveJobs.isNotEmpty()) liveJobs[0].jobId else "WORKER-1001",
+                jobId = activeJobId,
                 latitude = 10.5276,
                 longitude = 76.2144
             )
-            EventReporter.addLocalLog("Ã¢ÂÂ¸ Worker Clocked Out. System entered sleep mode.")
+            EventReporter.addLocalLog("Worker Clocked Out. System entered sleep mode.")
 
             updateClockInOutUi(false)
-            Toast.makeText(this, "Ã¢ÂÂ¸ Clocked Out. App is now sleeping (Zero background usage).", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Clocked Out. App is now sleeping (Zero background usage).", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -729,7 +730,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         if (isClockedIn) {
             tvAttendanceStatus?.text = "Clocked In"
             tvAttendanceStatus?.setTextColor(getColor(R.color.status_green))
-            tvAttendanceSubtitle?.text = "Tracking active Ã¢â‚¬Â¢ Background armed"
+            tvAttendanceSubtitle?.text = "Tracking active • Background armed"
             ivAttendanceIcon?.setColorFilter(getColor(R.color.status_green))
 
             btnClockToggle?.text = "Clock Out"
@@ -743,7 +744,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         } else {
             tvAttendanceStatus?.text = "Clocked Out"
             tvAttendanceStatus?.setTextColor(getColor(R.color.text_secondary))
-            tvAttendanceSubtitle?.text = "App is sleeping Ã¢â‚¬Â¢ No background tracking"
+            tvAttendanceSubtitle?.text = "App is sleeping • No background tracking"
             ivAttendanceIcon?.setColorFilter(getColor(R.color.text_muted))
 
             btnClockToggle?.text = "Clock In"
