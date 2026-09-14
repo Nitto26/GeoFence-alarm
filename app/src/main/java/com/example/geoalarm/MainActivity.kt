@@ -708,12 +708,23 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             )
             EventReporter.addLocalLog("Worker Clocked In. Background radar & geofences armed.")
 
+            // OS-Level Notification for Clock In
+            WorkNotificationManager.showClockInNotification(this, activeJobId, isAuto = false)
+
             updateClockInOutUi(true)
             Toast.makeText(this, "Clocked In! Background tracking active & armed.", Toast.LENGTH_SHORT).show()
 
         } else {
             // CLOCK OUT ACTION
             val activeJobId = sharedPrefs.getString("ACTIVE_JOB_ID", if (liveJobs.isNotEmpty()) liveJobs[0].jobId else loggedInWorkerId) ?: loggedInWorkerId
+            val clockInTime = sharedPrefs.getLong("CLOCK_IN_TIMESTAMP", 0L)
+            val formattedDuration = if (clockInTime > 0L) {
+                val dur = System.currentTimeMillis() - clockInTime
+                val h = dur / 3600000
+                val m = (dur % 3600000) / 60000
+                String.format("%02dh %02dm", h, m)
+            } else ""
+
             sharedPrefs.edit()
                 .putBoolean("IS_CLOCKED_IN", false)
                 .putBoolean("IS_SYSTEM_ARMED", false)
@@ -741,6 +752,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 longitude = 76.2144
             )
             EventReporter.addLocalLog("Worker Clocked Out. System entered sleep mode.")
+
+            // OS-Level Notification for Clock Out
+            WorkNotificationManager.showClockOutNotification(this, activeJobId, formattedDuration)
 
             updateClockInOutUi(false)
             Toast.makeText(this, "Clocked Out. App is now sleeping (Zero background usage).", Toast.LENGTH_SHORT).show()

@@ -44,11 +44,13 @@ class LoginActivity : AppCompatActivity() {
         // Display current active cloud server
         tvConnectionStatus?.text = "Server: ${ApiClient.getBaseUrl()}"
 
-        // Pre-fill last logged in worker ID if available
+        // 1. One-Time Persistent Login Check: If already authenticated, skip login screen
         val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
         val savedWorkerId = userPrefs.getString("WORKER_ID", "")
         if (!savedWorkerId.isNullOrEmpty()) {
-            etUsername.setText(savedWorkerId)
+            val savedWorkerName = userPrefs.getString("WORKER_NAME", "Worker") ?: "Worker"
+            proceedToMain(savedWorkerId, savedWorkerName)
+            return
         }
 
         // Password visibility toggle

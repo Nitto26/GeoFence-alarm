@@ -84,13 +84,8 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                     )
                     EventReporter.addLocalLog("✓ Work time started ($jobId). Payroll timer running.")
 
-                    // 3. Post Notification to Worker
-                    showWorkTimeNotification(
-                        context = context,
-                        notificationId = NOTIFICATION_ID_ENTRY,
-                        title = "🟢 Work Time Started!",
-                        message = "You entered your assigned worksite ($jobId). Attendance and Payroll timer are now active."
-                    )
+                    // 3. Post OS-Level Notification to Worker
+                    WorkNotificationManager.showClockInNotification(context, jobId, isAuto = true)
 
                     // 4. Start Foreground Radar Service for continuous tracking
                     val serviceIntent = Intent(context, RadarService::class.java)
@@ -120,12 +115,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                     )
                     EventReporter.addLocalLog("Worksite Entry: Inside $jobId.")
 
-                    showWorkTimeNotification(
-                        context = context,
-                        notificationId = NOTIFICATION_ID_ENTRY,
-                        title = "🟢 Inside Worksite ($jobId)",
-                        message = "Shift tracking and payroll active."
-                    )
+                    WorkNotificationManager.showGeofenceEntryNotification(context, jobId)
                 }
 
             } else if (transition == Geofence.GEOFENCE_TRANSITION_EXIT) {
@@ -141,58 +131,9 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                     )
                     EventReporter.addLocalLog("⚠️ Worksite boundary exit ($jobId)")
 
-                    showWorkTimeNotification(
-                        context = context,
-                        notificationId = NOTIFICATION_ID_EXIT,
-                        title = "⚠️ Left Worksite Boundary",
-                        message = "You have moved outside the assigned worksite perimeter ($jobId)."
-                    )
+                    WorkNotificationManager.showGeofenceExitNotification(context, jobId)
                 }
             }
-        }
-    }
-
-    private fun showWorkTimeNotification(context: Context, notificationId: Int, title: String, message: String) {
-        try {
-            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val channel = NotificationChannel(
-                    CHANNEL_ID,
-                    "Work Time & Attendance Alerts",
-                    NotificationManager.IMPORTANCE_HIGH
-                ).apply {
-                    description = "Notifications for automatic work time start and worksite geofence alerts"
-                    enableLights(true)
-                    enableVibration(true)
-                }
-                nm.createNotificationChannel(channel)
-            }
-
-            val openAppIntent = Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            }
-            val pendingIntent = PendingIntent.getActivity(
-                context,
-                notificationId,
-                openAppIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-
-            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-                .setContentTitle(title)
-                .setContentText(message)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(message))
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setCategory(NotificationCompat.CATEGORY_STATUS)
-                .setContentIntent(pendingIntent)
-                .setAutoCancel(true)
-                .build()
-
-            nm.notify(notificationId, notification)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error displaying work time notification: ${e.message}")
         }
     }
 }
