@@ -332,6 +332,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                         EventReporter.addLocalLog("Schedule fetched successfully (${jobs.size} jobs)")
                         updateHomeUiWithLiveJobs(jobs)
                         updateWorkCalendarWithJobs(jobs)
+                        if (hasLocationPermission()) {
+                            armAllJobGeofences(jobs)
+                        }
                         if (isMapReady) {
                             renderJobsOnMap(jobs)
                         }
@@ -1063,6 +1066,51 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Geofence registration error: ${e.message}")
+        }
+    }
+
+    private fun armAllJobGeofences(jobs: List<JobItem>) {
+        if (!hasLocationPermission() || jobs.isEmpty()) return
+
+        val geofenceList = mutableListOf<Geofence>()
+        for (job in jobs) {
+            if (job.location.isNotEmpty()) {
+                var latSum = 0.0
+                var lngSum = 0.0
+                for (pt in job.location) {
+                    latSum += pt.latitude
+                    lngSum += pt.longitude
+                }
+                val centerLat = latSum / job.location.size
+                val centerLng = lngSum / job.location.size
+
+                val geofence = Geofence.Builder()
+                    .setRequestId(job.jobId)
+                    .setCircularRegion(centerLat, centerLng, 100f)
+                    .setExpirationDuration(Geofence.NEVER_EXPIRE)
+                    .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_EXIT)
+                    .build()
+                geofenceList.add(geofence)
+            }
+        }
+
+        if (geofenceList.isNotEmpty()) {
+            val request = GeofencingRequest.Builder()
+                .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER or GeofencingRequest.INITIAL_TRIGGER_DWELL)
+                .addGeofences(geofenceList)
+                .build()
+
+            try {
+                geofencingClient.addGeofences(request, geofencePendingIntent)
+                    .addOnSuccessListener {
+                        Log.d(TAG, "✓ Armed ${geofenceList.size} OS-level Geofences for background arrival tracking")
+                    }
+                    .addOnFailureListener {
+                        Log.e(TAG, "Failed to register background geofences: ${it.message}")
+                    }
+            } catch (e: SecurityException) {
+                Log.e(TAG, "Geofence security exception: ${e.message}")
+            }
         }
     }
 
