@@ -714,7 +714,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             if (liveJobs.isNotEmpty()) {
                 liveJobs.forEach { job ->
                     if (job.location.isNotEmpty()) {
-                        armJobGeofence(job.jobId, LatLng(job.location[0].latitude, job.location[0].longitude), 500f)
+                        armJobGeofence(job.jobId, LatLng(job.location[0].latitude, job.location[0].longitude), 100f)
                     }
                 }
             }
@@ -911,7 +911,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 }
 
                 // Always arm geofence for assigned worksite to enable automatic arrival detection & work time start
-                armJobGeofence(job.jobId, centerPoint, 500f)
+                armJobGeofence(job.jobId, centerPoint, 100f)
             }
         }
 
@@ -1027,9 +1027,11 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             return
         }
 
+        val effectiveRadius = if (radius > 150f) 100f else radius
+
         val sharedPrefs = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
         sharedPrefs.edit()
-            .putFloat("TARGET_RADIUS", radius)
+            .putFloat("TARGET_RADIUS", effectiveRadius)
             .putBoolean("IS_SYSTEM_ARMED", true)
             .apply()
 
@@ -1041,7 +1043,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         val geofence = Geofence.Builder()
             .setRequestId(jobId)
-            .setCircularRegion(latLng.latitude, latLng.longitude, radius + 500f)
+            .setCircularRegion(latLng.latitude, latLng.longitude, effectiveRadius)
             .setExpirationDuration(Geofence.NEVER_EXPIRE)
             .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_EXIT)
             .build()
@@ -1054,7 +1056,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         try {
             geofencingClient.removeGeofences(listOf(jobId)).addOnCompleteListener {
                 geofencingClient.addGeofences(geofencingRequest, geofencePendingIntent).addOnSuccessListener {
-                    Log.d(TAG, "Armed Geofence for $jobId successfully")
+                    Log.d(TAG, "Armed Geofence for $jobId successfully (radius: ${effectiveRadius}m)")
                 }.addOnFailureListener {
                     Log.e(TAG, "Geofence error: ${it.message}")
                 }
@@ -1432,29 +1434,50 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private fun isCoordinateInsideJob(lat: Double, lng: Double, job: JobItem): Boolean {
         if (job.location.isEmpty()) return false
 
-        // 1. Distance check to vertices (within 500 meters)
-        for (coord in job.location) {
-            val dist = FloatArray(1)
-            android.location.Location.distanceBetween(lat, lng, coord.latitude, coord.longitude, dist)
-            if (dist[0] <= 500f) {
-                return true
-            }
+        // 1. Guard check: Stay / Accommodation Safety Zone
+        // If worker is within 120m of their accommodation, they are NOT at a worksite.
+        val stayDist = FloatArray(1)
+        android.location.Location.distanceBetween(lat, lng, accommodationLatLng.latitude, accommodationLatLng.longitude, stayDist)
+        if (stayDist[0] <= 120f) {
+            return false
         }
 
-        // 2. Point-in-polygon ray-casting algorithm
+        // 2. Point-in-polygon ray-casting algorithm (for polygon worksites)
         val points = job.location
-        var inside = false
-        var j = points.size - 1
-        for (i in points.indices) {
-            val pi = points[i]
-            val pj = points[j]
-            if ((pi.longitude > lng) != (pj.longitude > lng) &&
-                lat < (pj.latitude - pi.latitude) * (lng - pi.longitude) / (pj.longitude - pi.longitude) + pi.latitude) {
-                inside = !inside
+        if (points.size >= 3) {
+            var inside = false
+            var j = points.size - 1
+            for (i in points.indices) {
+                val pi = points[i]
+                val pj = points[j]
+                if ((pi.longitude > lng) != (pj.longitude > lng) &&
+                    lat < (pj.latitude - pi.latitude) * (lng - pi.longitude) / (pj.longitude - pi.longitude) + pi.latitude) {
+                    inside = !inside
+                }
+                j = i
             }
-            j = i
+            if (inside) return true
+
+            // Proximity buffer to boundary vertices (within 40 meters)
+            for (coord in points) {
+                val dist = FloatArray(1)
+                android.location.Location.distanceBetween(lat, lng, coord.latitude, coord.longitude, dist)
+                if (dist[0] <= 40f) {
+                    return true
+                }
+            }
+            return false
+        } else {
+            // Single point worksite: 75m perimeter
+            for (coord in points) {
+                val dist = FloatArray(1)
+                android.location.Location.distanceBetween(lat, lng, coord.latitude, coord.longitude, dist)
+                if (dist[0] <= 75f) {
+                    return true
+                }
+            }
+            return false
         }
-        return inside
     }
 
     override fun onResume() {
