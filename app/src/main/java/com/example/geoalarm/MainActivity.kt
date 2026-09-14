@@ -49,10 +49,13 @@ import com.example.geoalarm.network.SyncState
 import com.example.geoalarm.storage.LocalEventDatabaseHelper
 import com.example.geoalarm.storage.LocalEventRecord
 import com.google.android.gms.common.api.ResolvableApiException
+import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingClient
 import com.google.android.gms.location.GeofencingRequest
+import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.LocationSettingsRequest
 import com.google.android.gms.location.Priority
@@ -169,6 +172,11 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             mainHandler.postDelayed(this, 1000)
         }
     }
+
+    // Live Fused Location & Worksite Arrival Radar
+    private lateinit var mainFusedLocationClient: FusedLocationProviderClient
+    private var mainLocationCallback: LocationCallback? = null
+    private var lastInsideJobId: String? = null
 
     // OS Level Sabotage & Geofence Engine
     private val locationStateReceiver = LocationStateReceiver()
@@ -300,6 +308,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         // Start Live Clock and Shift Timer
         mainHandler.post(clockTicker)
 
+        // Initialize Live Fused Location Tracking & Arrival Radar
+        mainFusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        startLiveLocationTracking()
+
         // Fetch Live Jobs from Admin Panel Backend
         fetchLiveJobsFromBackend()
     }
@@ -322,6 +334,15 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                         updateWorkCalendarWithJobs(jobs)
                         if (isMapReady) {
                             renderJobsOnMap(jobs)
+                        }
+                        if (hasLocationPermission()) {
+                            try {
+                                mainFusedLocationClient.lastLocation.addOnSuccessListener { loc ->
+                                    if (loc != null) {
+                                        checkAndTriggerWorksiteArrival(loc.latitude, loc.longitude)
+                                    }
+                                }
+                            } catch (_: SecurityException) {}
                         }
                     } else {
                         EventReporter.addLocalLog("Failed to fetch schedule (HTTP ${response.code()})")
@@ -725,6 +746,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 String.format("%02dh %02dm", h, m)
             } else ""
 
+            lastInsideJobId = null
             sharedPrefs.edit()
                 .putBoolean("IS_CLOCKED_IN", false)
                 .putBoolean("IS_SYSTEM_ARMED", false)
@@ -1029,13 +1051,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             .addGeofence(geofence)
             .build()
 
-        geofencingClient.addGeofences(geofencingRequest, geofencePendingIntent).run {
-            addOnSuccessListener {
-                Log.d(TAG, "Armed Geofence for $jobId")
+        try {
+            geofencingClient.removeGeofences(listOf(jobId)).addOnCompleteListener {
+                geofencingClient.addGeofences(geofencingRequest, geofencePendingIntent).addOnSuccessListener {
+                    Log.d(TAG, "Armed Geofence for $jobId successfully")
+                }.addOnFailureListener {
+                    Log.e(TAG, "Geofence error: ${it.message}")
+                }
             }
-            addOnFailureListener {
-                Log.e(TAG, "Geofence error: ${it.message}")
-            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Geofence registration error: ${e.message}")
         }
     }
 
@@ -1295,17 +1320,160 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
     }
 
+    private fun startLiveLocationTracking() {
+        if (!hasLocationPermission()) return
+
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2000)
+            .setMinUpdateDistanceMeters(1f)
+            .build()
+
+        mainLocationCallback = object : LocationCallback() {
+            override fun onLocationResult(result: LocationResult) {
+                for (loc in result.locations) {
+                    checkAndTriggerWorksiteArrival(loc.latitude, loc.longitude)
+                }
+            }
+        }
+
+        try {
+            mainFusedLocationClient.requestLocationUpdates(
+                locationRequest,
+                mainLocationCallback!!,
+                Looper.getMainLooper()
+            )
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Location tracking permission error: ${e.message}")
+        }
+    }
+
+    private fun checkAndTriggerWorksiteArrival(lat: Double, lng: Double) {
+        val sharedPrefs = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
+        val isClockedIn = sharedPrefs.getBoolean("IS_CLOCKED_IN", false)
+
+        var matchedJob: JobItem? = null
+        for (job in liveJobs) {
+            if (isCoordinateInsideJob(lat, lng, job)) {
+                matchedJob = job
+                break
+            }
+        }
+
+        if (matchedJob != null) {
+            val jobId = matchedJob.jobId
+            // Trigger if we moved into a new worksite or if we weren't clocked in yet
+            if (lastInsideJobId != jobId || !isClockedIn) {
+                lastInsideJobId = jobId
+
+                if (!isClockedIn) {
+                    val now = System.currentTimeMillis()
+                    sharedPrefs.edit()
+                        .putBoolean("IS_CLOCKED_IN", true)
+                        .putBoolean("IS_SYSTEM_ARMED", true)
+                        .putLong("CLOCK_IN_TIMESTAMP", now)
+                        .putString("ACTIVE_JOB_ID", jobId)
+                        .apply()
+
+                    startTimeMillis = now
+                    updateClockInOutUi(true)
+
+                    WorkNotificationManager.showClockInNotification(this, jobId, isAuto = true)
+
+                    EventReporter.reportEvent(
+                        context = this,
+                        eventType = "clock_in",
+                        jobId = jobId,
+                        latitude = lat,
+                        longitude = lng
+                    )
+                    EventReporter.reportEvent(
+                        context = this,
+                        eventType = "entry",
+                        jobId = jobId,
+                        latitude = lat,
+                        longitude = lng
+                    )
+                    EventReporter.addLocalLog("✓ Work time auto-started at $jobId. Payroll active.")
+
+                    startRadarServiceSafely()
+                } else {
+                    // Already clocked in, entering this worksite perimeter
+                    WorkNotificationManager.showGeofenceEntryNotification(this, jobId)
+
+                    EventReporter.reportEvent(
+                        context = this,
+                        eventType = "entry",
+                        jobId = jobId,
+                        latitude = lat,
+                        longitude = lng
+                    )
+                    EventReporter.addLocalLog("Worksite Entry: Inside $jobId.")
+                }
+            }
+        } else {
+            // Coordinate is outside all assigned worksites
+            if (lastInsideJobId != null) {
+                val exitedJobId = lastInsideJobId ?: "Worksite"
+                lastInsideJobId = null
+
+                WorkNotificationManager.showGeofenceExitNotification(this, exitedJobId)
+
+                EventReporter.reportEvent(
+                    context = this,
+                    eventType = "exit",
+                    jobId = exitedJobId,
+                    latitude = lat,
+                    longitude = lng
+                )
+                EventReporter.addLocalLog("⚠️ Worksite boundary exit ($exitedJobId)")
+            }
+        }
+    }
+
+    private fun isCoordinateInsideJob(lat: Double, lng: Double, job: JobItem): Boolean {
+        if (job.location.isEmpty()) return false
+
+        // 1. Distance check to vertices (within 500 meters)
+        for (coord in job.location) {
+            val dist = FloatArray(1)
+            android.location.Location.distanceBetween(lat, lng, coord.latitude, coord.longitude, dist)
+            if (dist[0] <= 500f) {
+                return true
+            }
+        }
+
+        // 2. Point-in-polygon ray-casting algorithm
+        val points = job.location
+        var inside = false
+        var j = points.size - 1
+        for (i in points.indices) {
+            val pi = points[i]
+            val pj = points[j]
+            if ((pi.longitude > lng) != (pj.longitude > lng) &&
+                lat < (pj.latitude - pi.latitude) * (lng - pi.longitude) / (pj.longitude - pi.longitude) + pi.latitude) {
+                inside = !inside
+            }
+            j = i
+        }
+        return inside
+    }
+
     override fun onResume() {
         super.onResume()
         val isClockedIn = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
             .getBoolean("IS_CLOCKED_IN", false)
         updateClockInOutUi(isClockedIn)
+        startLiveLocationTracking()
     }
 
     override fun onDestroy() {
         super.onDestroy()
         SyncEngine.removeListener(syncListener)
         mainHandler.removeCallbacks(clockTicker)
+        if (mainLocationCallback != null) {
+            try {
+                mainFusedLocationClient.removeLocationUpdates(mainLocationCallback!!)
+            } catch (_: Exception) {}
+        }
         try {
             unregisterReceiver(locationStateReceiver)
         } catch (e: Exception) {
