@@ -3,6 +3,7 @@ package com.example.geoalarm
 import android.Manifest
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -115,7 +116,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     // Handlers for Clock and Shift Timer
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var startTimeMillis = System.currentTimeMillis() - (5 * 3600 * 1000 + 42 * 60000 + 18000)
+    private var startTimeMillis = 0L
 
     // Secret 3-Tap Version Counter
     private var versionClickCount = 0
@@ -125,6 +126,17 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private val syncListener: (SyncState) -> Unit = { state ->
         runOnUiThread {
             updateSyncBadgeUi(state)
+        }
+    }
+
+    // Dynamic Work & Payroll State Receiver (Auto-clock-in from geofence arrival)
+    private val workStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val isClockedIn = intent?.getBooleanExtra("IS_CLOCKED_IN", false) ?: false
+            val clockInTime = intent?.getLongExtra("CLOCK_IN_TIMESTAMP", System.currentTimeMillis()) ?: System.currentTimeMillis()
+            startTimeMillis = clockInTime
+            updateClockInOutUi(isClockedIn)
+            EventReporter.addLocalLog("Work State Receiver: Clocked In = $isClockedIn")
         }
     }
 
@@ -142,7 +154,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             val tvTimer = findViewById<TextView>(R.id.tvHoursWorkedTimer)
             if (tvTimer != null) {
                 if (isClockedIn) {
-                    val elapsed = System.currentTimeMillis() - startTimeMillis
+                    val clockInTimestamp = sharedPrefs.getLong("CLOCK_IN_TIMESTAMP", 0L)
+                    val baseTime = if (clockInTimestamp > 0L) clockInTimestamp else (if (startTimeMillis > 0L) startTimeMillis else System.currentTimeMillis())
+                    val elapsed = System.currentTimeMillis() - baseTime
                     val hours = elapsed / 3600000
                     val minutes = (elapsed % 3600000) / 60000
                     val seconds = (elapsed % 60000) / 1000
@@ -268,6 +282,19 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             )
         } catch (e: Exception) {
             Log.e(TAG, "Receiver registration error: ${e.message}")
+        }
+
+        // Register Work State Receiver for Automatic Geofence Clock-In
+        try {
+            val workFilter = IntentFilter(GeofenceBroadcastReceiver.ACTION_WORK_STATE_CHANGED)
+            ContextCompat.registerReceiver(
+                this,
+                workStateReceiver,
+                workFilter,
+                ContextCompat.RECEIVER_EXPORTED
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "WorkStateReceiver registration error: ${e.message}")
         }
 
         // Start Live Clock and Shift Timer
@@ -847,10 +874,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     worksiteMarkers[job.jobId] = marker
                 }
 
-                // Arm geofence only if worker is Clocked In
-                if (isClockedIn) {
-                    armJobGeofence(job.jobId, centerPoint, 500f)
-                }
+                // Always arm geofence for assigned worksite to enable automatic arrival detection & work time start
+                armJobGeofence(job.jobId, centerPoint, 500f)
             }
         }
 
@@ -1256,12 +1281,24 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        val isClockedIn = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
+            .getBoolean("IS_CLOCKED_IN", false)
+        updateClockInOutUi(isClockedIn)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         SyncEngine.removeListener(syncListener)
         mainHandler.removeCallbacks(clockTicker)
         try {
             unregisterReceiver(locationStateReceiver)
+        } catch (e: Exception) {
+            // Already unregistered
+        }
+        try {
+            unregisterReceiver(workStateReceiver)
         } catch (e: Exception) {
             // Already unregistered
         }
