@@ -19,12 +19,15 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.example.geoalarm.network.EventReporter
+import com.example.geoalarm.network.JobItem
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 
 class RadarService : Service() {
 
@@ -32,12 +35,21 @@ class RadarService : Service() {
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationCallback: LocationCallback
     private var lastPingTimestamp = 0L
+    private var lastInsideJobId: String? = null
+    private val accommodationLat = 10.5182
+    private val accommodationLng = 76.2090
+
+    companion object {
+        private const val TAG = "RadarService"
+        private const val CHANNEL_ID = "RADAR_CHANNEL"
+        private const val NOTIFICATION_ID = 1
+    }
 
     override fun onCreate() {
         super.onCreate()
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
-        // Dynamically register the location state receiver so it receives GPS state changes
+        // Dynamically register the location state receiver for Sabotage detection
         try {
             val filter = IntentFilter().apply {
                 addAction(LocationManager.PROVIDERS_CHANGED_ACTION)
@@ -49,19 +61,18 @@ class RadarService : Service() {
                 filter,
                 ContextCompat.RECEIVER_EXPORTED
             )
-            Log.d("RadarService", "LocationStateReceiver dynamically registered in Foreground Service")
+            Log.d(TAG, "LocationStateReceiver registered in Foreground Service")
         } catch (e: Exception) {
-            Log.e("RadarService", "Failed to register receiver: ${e.message}")
+            Log.e(TAG, "Failed to register receiver: ${e.message}")
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // 1. Guard Check: Only run if worker is explicitly Clocked In
-        val sharedPrefs = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
-        val isClockedIn = sharedPrefs.getBoolean("IS_CLOCKED_IN", false)
+        val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+        val workerId = userPrefs.getString("WORKER_ID", "")
 
-        if (!isClockedIn) {
-            Log.w("RadarService", "Worker is Clocked Out. Refusing to run background service.")
+        if (workerId.isNullOrEmpty()) {
+            Log.w(TAG, "No active worker session. Stopping RadarService.")
             stopSelf()
             return START_NOT_STICKY
         }
@@ -70,16 +81,16 @@ class RadarService : Service() {
         val hasCoarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
         if (!hasFine && !hasCoarse) {
-            Log.w("RadarService", "Location permissions not granted yet. Cannot start location FGS.")
+            Log.w(TAG, "Location permissions not granted yet. Stopping RadarService.")
             stopSelf()
             return START_NOT_STICKY
         }
 
         try {
-            startForegroundNotification()
+            updateForegroundNotification()
             startActiveRadar()
         } catch (e: SecurityException) {
-            Log.e("RadarService", "SecurityException starting foreground service: ${e.message}")
+            Log.e(TAG, "SecurityException starting foreground service: ${e.message}")
             stopSelf()
             return START_NOT_STICKY
         }
@@ -87,31 +98,41 @@ class RadarService : Service() {
         return START_STICKY
     }
 
-    private fun startForegroundNotification() {
-        val channelId = "RADAR_CHANNEL"
+    private fun updateForegroundNotification() {
         val manager = getSystemService(NotificationManager::class.java)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val existing = manager.getNotificationChannel(channelId)
+            val existing = manager.getNotificationChannel(CHANNEL_ID)
             if (existing == null) {
                 val channel = NotificationChannel(
-                    channelId,
+                    CHANNEL_ID,
                     "GeoAlarm Tracking Service",
                     NotificationManager.IMPORTANCE_LOW
-                )
+                ).apply {
+                    description = "Continuous background location radar and worksite arrival detection"
+                }
                 manager.createNotificationChannel(channel)
             }
         }
 
-        val openAppIntent = Intent(this, MainActivity::class.java)
+        val sharedPrefs = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
+        val isClockedIn = sharedPrefs.getBoolean("IS_CLOCKED_IN", false)
+        val activeJobId = sharedPrefs.getString("ACTIVE_JOB_ID", "Assigned Worksite") ?: "Assigned Worksite"
+
+        val title = if (isClockedIn) "🟢 Shift Active — $activeJobId" else "🚗 Travel Radar Active"
+        val text = if (isClockedIn) "Attendance & payroll tracking running in background" else "Monitoring worksite arrival..."
+
+        val openAppIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
         val pendingIntent = PendingIntent.getActivity(
             this, 0, openAppIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("Worker Tracker Active")
-            .setContentText("Clocked In • Monitoring worksite geofences...")
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle(title)
+            .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
@@ -120,97 +141,205 @@ class RadarService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             ServiceCompat.startForeground(
                 this,
-                1,
+                NOTIFICATION_ID,
                 notification,
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
             )
         } else {
-            startForeground(1, notification)
+            startForeground(NOTIFICATION_ID, notification)
         }
     }
 
-    private fun fireFullScreenAlarm() {
-        Log.e("RadarService", "Destination reached! Triggering AlarmController...")
-        AlarmController.triggerAlarm(this, isSabotage = false)
-    }
-
     private fun startActiveRadar() {
-        val prefs = getSharedPreferences("GeoPrefs", Context.MODE_PRIVATE)
-        val targetLat = prefs.getFloat("TARGET_LAT", 0f).toDouble()
-        val targetLng = prefs.getFloat("TARGET_LNG", 0f).toDouble()
+        if (::locationCallback.isInitialized) {
+            try {
+                fusedLocationClient.removeLocationUpdates(locationCallback)
+            } catch (_: Exception) {}
+        }
 
-        val alarmPrefs = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
-        val dynamicTriggerRadius = alarmPrefs.getFloat("TARGET_RADIUS", 500f).toDouble()
-
-        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5000)
-            .setMinUpdateDistanceMeters(10f)
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 3000)
+            .setMinUpdateDistanceMeters(2f)
             .build()
 
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(locationResult: LocationResult) {
-                // Ensure worker is still clocked in
-                val isStillClockedIn = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
-                    .getBoolean("IS_CLOCKED_IN", false)
+                val sharedPrefs = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
+                val isClockedIn = sharedPrefs.getBoolean("IS_CLOCKED_IN", false)
+                val currentJobId = sharedPrefs.getString("ACTIVE_JOB_ID", "JOB-1001") ?: "JOB-1001"
 
-                if (!isStillClockedIn) {
-                    Log.d("RadarService", "Worker Clocked Out detected during location update. Halting.")
-                    fusedLocationClient.removeLocationUpdates(this)
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                    stopSelf()
-                    return
-                }
-
-                val currentJobId = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
-                    .getString("ACTIVE_JOB_ID", "JOB-1001") ?: "JOB-1001"
+                val jobs = loadCachedJobs()
 
                 for (location in locationResult.locations) {
+                    val lat = location.latitude
+                    val lng = location.longitude
                     val now = System.currentTimeMillis()
 
-                    // Periodic Ping Dispatching every 30 seconds to Admin Panel
-                    if (now - lastPingTimestamp >= 30_000L) {
+                    // 1. Process Background Worksite Arrival Radar
+                    processLocationAgainstJobs(lat, lng, jobs)
+
+                    // 2. Periodic Ping Dispatching every 30 seconds if Clocked In
+                    if (isClockedIn && (now - lastPingTimestamp >= 30_000L)) {
                         lastPingTimestamp = now
                         EventReporter.reportEvent(
                             context = this@RadarService,
                             eventType = "ping",
                             jobId = currentJobId,
-                            latitude = location.latitude,
-                            longitude = location.longitude
+                            latitude = lat,
+                            longitude = lng
                         )
-                    }
-
-                    if (targetLat != 0.0 && targetLng != 0.0) {
-                        val results = FloatArray(1)
-                        android.location.Location.distanceBetween(
-                            location.latitude, location.longitude,
-                            targetLat, targetLng, results
-                        )
-
-                        val distance = results[0]
-                        Log.d("RadarService", "Distance: ${distance.toInt()}m | Trigger at: ${dynamicTriggerRadius.toInt()}m")
-
-                        if (distance <= dynamicTriggerRadius) {
-                            Log.e("RadarService", "${dynamicTriggerRadius.toInt()}M RADIUS BREACHED! FIRING ALARM!")
-                            fireFullScreenAlarm()
-                            EventReporter.reportEvent(
-                                context = this@RadarService,
-                                eventType = "entry",
-                                jobId = currentJobId,
-                                latitude = location.latitude,
-                                longitude = location.longitude
-                            )
-                            fusedLocationClient.removeLocationUpdates(this)
-                            stopForeground(STOP_FOREGROUND_REMOVE)
-                            stopSelf()
-                        }
                     }
                 }
             }
         }
 
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-            == PackageManager.PERMISSION_GRANTED
-        ) {
-            fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper())
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            try {
+                fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper())
+                Log.d(TAG, "✓ RadarService location updates active (3s interval, high accuracy)")
+            } catch (e: SecurityException) {
+                Log.e(TAG, "SecurityException requesting location updates: ${e.message}")
+            }
+        }
+    }
+
+    private fun processLocationAgainstJobs(lat: Double, lng: Double, jobs: List<JobItem>) {
+        val sharedPrefs = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
+        val isClockedIn = sharedPrefs.getBoolean("IS_CLOCKED_IN", false)
+
+        var matchedJob: JobItem? = null
+        for (job in jobs) {
+            if (isCoordinateInsideJob(lat, lng, job)) {
+                matchedJob = job
+                break
+            }
+        }
+
+        if (matchedJob != null) {
+            val jobId = matchedJob.jobId
+            if (lastInsideJobId != jobId || !isClockedIn) {
+                lastInsideJobId = jobId
+
+                if (!isClockedIn) {
+                    // AUTO CLOCK IN ON ARRIVAL
+                    val now = System.currentTimeMillis()
+                    sharedPrefs.edit()
+                        .putBoolean("IS_CLOCKED_IN", true)
+                        .putBoolean("IS_SYSTEM_ARMED", true)
+                        .putLong("CLOCK_IN_TIMESTAMP", now)
+                        .putString("ACTIVE_JOB_ID", jobId)
+                        .apply()
+
+                    updateForegroundNotification()
+                    WorkNotificationManager.showClockInNotification(this, jobId, isAuto = true)
+
+                    EventReporter.reportEvent(
+                        context = this,
+                        eventType = "clock_in",
+                        jobId = jobId,
+                        latitude = lat,
+                        longitude = lng
+                    )
+                    EventReporter.reportEvent(
+                        context = this,
+                        eventType = "entry",
+                        jobId = jobId,
+                        latitude = lat,
+                        longitude = lng
+                    )
+                    EventReporter.addLocalLog("✓ Background Arrival: Work time started at $jobId. Payroll active.")
+
+                    // Broadcast to MainActivity if active
+                    val stateIntent = Intent(GeofenceBroadcastReceiver.ACTION_WORK_STATE_CHANGED).apply {
+                        putExtra("IS_CLOCKED_IN", true)
+                        putExtra("CLOCK_IN_TIMESTAMP", now)
+                        putExtra("ACTIVE_JOB_ID", jobId)
+                        setPackage(packageName)
+                    }
+                    sendBroadcast(stateIntent)
+                } else {
+                    WorkNotificationManager.showGeofenceEntryNotification(this, jobId)
+                    EventReporter.reportEvent(
+                        context = this,
+                        eventType = "entry",
+                        jobId = jobId,
+                        latitude = lat,
+                        longitude = lng
+                    )
+                    EventReporter.addLocalLog("Worksite Entry: Inside $jobId.")
+                }
+            }
+        } else {
+            // Coordinate is outside all worksites
+            if (lastInsideJobId != null) {
+                val exitedJobId = lastInsideJobId ?: "Worksite"
+                lastInsideJobId = null
+
+                WorkNotificationManager.showGeofenceExitNotification(this, exitedJobId)
+                EventReporter.reportEvent(
+                    context = this,
+                    eventType = "exit",
+                    jobId = exitedJobId,
+                    latitude = lat,
+                    longitude = lng
+                )
+                EventReporter.addLocalLog("⚠️ Worksite boundary exit ($exitedJobId)")
+            }
+        }
+    }
+
+    private fun isCoordinateInsideJob(lat: Double, lng: Double, job: JobItem): Boolean {
+        if (job.location.isEmpty()) return false
+
+        // Guard: Stay / Accommodation Safety Zone
+        val stayDist = FloatArray(1)
+        android.location.Location.distanceBetween(lat, lng, accommodationLat, accommodationLng, stayDist)
+        if (stayDist[0] <= 120f) {
+            return false
+        }
+
+        val points = job.location
+        if (points.size >= 3) {
+            var inside = false
+            var j = points.size - 1
+            for (i in points.indices) {
+                val pi = points[i]
+                val pj = points[j]
+                if ((pi.longitude > lng) != (pj.longitude > lng) &&
+                    lat < (pj.latitude - pi.latitude) * (lng - pi.longitude) / (pj.longitude - pi.longitude) + pi.latitude) {
+                    inside = !inside
+                }
+                j = i
+            }
+            if (inside) return true
+
+            for (coord in points) {
+                val dist = FloatArray(1)
+                android.location.Location.distanceBetween(lat, lng, coord.latitude, coord.longitude, dist)
+                if (dist[0] <= 40f) {
+                    return true
+                }
+            }
+            return false
+        } else {
+            for (coord in points) {
+                val dist = FloatArray(1)
+                android.location.Location.distanceBetween(lat, lng, coord.latitude, coord.longitude, dist)
+                if (dist[0] <= 75f) {
+                    return true
+                }
+            }
+            return false
+        }
+    }
+
+    private fun loadCachedJobs(): List<JobItem> {
+        val geoPrefs = getSharedPreferences("GeoPrefs", Context.MODE_PRIVATE)
+        val json = geoPrefs.getString("CACHED_JOBS_JSON", null) ?: return emptyList()
+        return try {
+            val type = object : TypeToken<List<JobItem>>() {}.type
+            Gson().fromJson(json, type) ?: emptyList()
+        } catch (e: Exception) {
+            emptyList()
         }
     }
 
@@ -219,12 +348,14 @@ class RadarService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         if (::locationCallback.isInitialized) {
-            fusedLocationClient.removeLocationUpdates(locationCallback)
+            try {
+                fusedLocationClient.removeLocationUpdates(locationCallback)
+            } catch (_: Exception) {}
         }
         try {
             unregisterReceiver(locationStateReceiver)
         } catch (e: Exception) {
-            Log.e("RadarService", "Receiver unregister error: ${e.message}")
+            Log.e(TAG, "Receiver unregister error: ${e.message}")
         }
     }
 }

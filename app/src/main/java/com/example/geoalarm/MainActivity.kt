@@ -199,13 +199,17 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             if (fineGranted || coarseGranted) {
                 checkLocationSettings()
                 enableUserLocation()
-                val isClockedIn = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
-                    .getBoolean("IS_CLOCKED_IN", false)
-                if (isClockedIn) {
-                    startRadarServiceSafely()
-                }
+                startRadarServiceSafely()
+                requestBackgroundLocationIfNecessary()
             } else {
                 Log.e(TAG, "Location permission denied by user")
+            }
+        }
+
+    private val requestBgPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) {
+                Log.d(TAG, "Background location permission granted (Allow all the time)")
             }
         }
 
@@ -271,8 +275,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         // Request runtime permissions
         requestPermissions()
 
-        // Only start background Radar service if worker is actively Clocked In
-        if (isClockedIn && hasLocationPermission()) {
+        // Start background Radar service for persistent worksite arrival tracking
+        if (hasLocationPermission()) {
             startRadarServiceSafely()
         }
 
@@ -329,11 +333,18 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     if (response.isSuccessful) {
                         val jobs = response.body()?.jobs ?: emptyList()
                         liveJobs = jobs
+                        val jobsJson = com.google.gson.Gson().toJson(jobs)
+                        getSharedPreferences("GeoPrefs", Context.MODE_PRIVATE)
+                            .edit()
+                            .putString("CACHED_JOBS_JSON", jobsJson)
+                            .apply()
+
                         EventReporter.addLocalLog("Schedule fetched successfully (${jobs.size} jobs)")
                         updateHomeUiWithLiveJobs(jobs)
                         updateWorkCalendarWithJobs(jobs)
                         if (hasLocationPermission()) {
                             armAllJobGeofences(jobs)
+                            startRadarServiceSafely()
                         }
                         if (isMapReady) {
                             renderJobsOnMap(jobs)
@@ -1279,9 +1290,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     private fun startRadarServiceSafely() {
-        val isClockedIn = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
-            .getBoolean("IS_CLOCKED_IN", false)
-        if (!isClockedIn) return
+        val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+        val workerId = userPrefs.getString("WORKER_ID", "")
+        if (workerId.isNullOrEmpty()) return
 
         if (!hasLocationPermission()) return
         try {
@@ -1293,6 +1304,26 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Could not start RadarService: ${e.message}")
+        }
+    }
+
+    private fun requestBackgroundLocationIfNecessary() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val hasBg = ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+
+            if (!hasBg) {
+                AlertDialog.Builder(this)
+                    .setTitle("Allow Background Location")
+                    .setMessage("To automatically start work time when arriving at your worksite with the app closed, please select 'Allow all the time' in location permissions.")
+                    .setPositiveButton("Grant") { _, _ ->
+                        requestBgPermissionLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                    }
+                    .setNegativeButton("Later", null)
+                    .show()
+            }
         }
     }
 
