@@ -462,15 +462,21 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val tvNextWorksiteTitle = findViewById<TextView>(R.id.tvNextWorksiteTitle)
         val tvNextWorksiteTime = findViewById<TextView>(R.id.tvNextWorksiteTime)
 
-        tvWorksitesCountToday?.text = "${jobs.size} worksites today"
+        // Filter out accommodation so stay is not shown as a job
+        val workJobs = jobs.filter { it.siteType != "accommodation" && it.isStartingPoint != true }
 
-        if (jobs.isNotEmpty()) {
-            val firstJob = jobs[0]
-            tvNextWorksiteTitle?.text = firstJob.jobId
+        tvWorksitesCountToday?.text = "${workJobs.size} worksites today"
+
+        if (workJobs.isNotEmpty()) {
+            val firstJob = workJobs[0]
+            tvNextWorksiteTitle?.text = firstJob.jobTitle ?: firstJob.jobId
             val activeDays = firstJob.days.joinToString(", ")
             if (activeDays.isNotEmpty()) {
                 tvNextWorksiteTime?.text = "Active: $activeDays"
             }
+        } else {
+            tvNextWorksiteTitle?.text = "No Worksite Scheduled"
+            tvNextWorksiteTime?.text = "Standby"
         }
     }
 
@@ -1521,8 +1527,58 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val sharedPrefs = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
         val isClockedIn = sharedPrefs.getBoolean("IS_CLOCKED_IN", false)
 
+        val stayJob = liveJobs.find { it.siteType == "accommodation" || it.isStartingPoint == true }
+        val workJobs = liveJobs.filter { it.siteType != "accommodation" && it.isStartingPoint != true }
+
+        // Dynamic accommodation location
+        val stayLat = stayJob?.location?.firstOrNull()?.latitude ?: accommodationLatLng.latitude
+        val stayLng = stayJob?.location?.firstOrNull()?.longitude ?: accommodationLatLng.longitude
+
+        val stayDist = FloatArray(1)
+        android.location.Location.distanceBetween(lat, lng, stayLat, stayLng, stayDist)
+        val isCurrentlyInsideStay = stayDist[0] <= 80f
+        val wasInsideStay = sharedPrefs.getBoolean("WAS_INSIDE_STAY", false)
+
+        if (isCurrentlyInsideStay) {
+            if (!wasInsideStay) {
+                sharedPrefs.edit().putBoolean("WAS_INSIDE_STAY", true).apply()
+            }
+        } else {
+            // Worker is OUTSIDE stay
+            if (wasInsideStay) {
+                // EXITED STAY -> TRIGGER AUTO CLOCK-IN!
+                sharedPrefs.edit().putBoolean("WAS_INSIDE_STAY", false).apply()
+
+                if (!isClockedIn) {
+                    val now = System.currentTimeMillis()
+                    val primaryJobId = workJobs.firstOrNull()?.jobId ?: loggedInWorkerId
+                    sharedPrefs.edit()
+                        .putBoolean("IS_CLOCKED_IN", true)
+                        .putBoolean("IS_SYSTEM_ARMED", true)
+                        .putLong("CLOCK_IN_TIMESTAMP", now)
+                        .putString("ACTIVE_JOB_ID", primaryJobId)
+                        .apply()
+
+                    startTimeMillis = now
+                    updateClockInOutUi(true)
+
+                    WorkNotificationManager.showClockInNotification(this, primaryJobId, isAuto = true)
+
+                    EventReporter.reportEvent(
+                        context = this,
+                        eventType = "clock_in",
+                        jobId = primaryJobId,
+                        latitude = lat,
+                        longitude = lng
+                    )
+                    EventReporter.addLocalLog("🚀 Shift Started: Exited stay accommodation. Payroll tracking active.")
+                    startRadarServiceSafely()
+                }
+            }
+        }
+
         var matchedJob: JobItem? = null
-        for (job in liveJobs) {
+        for (job in workJobs) {
             if (isCoordinateInsideJob(lat, lng, job)) {
                 matchedJob = job
                 break

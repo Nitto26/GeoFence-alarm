@@ -9,6 +9,9 @@ data class LocationCoordinate(
 
 data class JobItem(
     @SerializedName("job_id") val jobId: String,
+    @SerializedName("job_title") val jobTitle: String? = null,
+    @SerializedName("site_type") val siteType: String? = "job",
+    @SerializedName("is_starting_point") val isStartingPoint: Boolean? = false,
     @SerializedName("location") val location: List<LocationCoordinate>,
     @SerializedName("days") val days: List<String>
 )
