@@ -117,7 +117,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private var accommodationMarker: Marker? = null
 
     // Assigned Accommodation from Website (null if not assigned)
-    private var assignedStayLatLng: LatLng? = null
+    private var assignedStayCenter: LatLng? = null
 
     // Handlers for Clock, Shift Timer, and Periodic Server Refresh
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -355,6 +355,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     val accommodation = response.body()?.accommodation
                     liveJobs = jobs
                     liveAccommodation = accommodation
+
+                    accommodation?.location?.firstOrNull()?.let {
+                        assignedStayCenter = LatLng(it.latitude, it.longitude)
+                    }
 
                     val geoEditor = getSharedPreferences("GeoPrefs", Context.MODE_PRIVATE).edit()
                     geoEditor.putString("CACHED_JOBS_JSON", com.google.gson.Gson().toJson(jobs))
@@ -977,14 +981,12 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val map = mMap ?: return
         map.clear()
         worksiteMarkers.clear()
+        accommodationMarker = null
 
         val boundsBuilder = LatLngBounds.Builder()
         var hasPoints = false
 
-        val isClockedIn = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
-            .getBoolean("IS_CLOCKED_IN", false)
-
-        // Plot assigned jobs
+        // 1. Plot Assigned Worksite Jobs (Blue Polygons and Azure Pins)
         jobs.forEach { job ->
             val polygonPoints = job.location.map { LatLng(it.latitude, it.longitude) }
 
@@ -992,7 +994,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 hasPoints = true
                 polygonPoints.forEach { boundsBuilder.include(it) }
 
-                // Draw Polygon Geofence Zone
+                // Draw Worksite Polygon Zone
                 if (polygonPoints.size >= 3) {
                     map.addPolygon(
                         PolygonOptions()
@@ -1003,43 +1005,68 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     )
                 }
 
-                // Add Marker Pin
+                // Add Worksite Pin
                 val centerPoint = polygonPoints[0]
                 val marker = map.addMarker(
                     MarkerOptions()
                         .position(centerPoint)
-                        .title(job.jobId)
+                        .title(job.jobTitle ?: job.jobId)
+                        .snippet("Worksite: ${job.jobId}")
                         .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
                 )
                 if (marker != null) {
                     worksiteMarkers[job.jobId] = marker
                 }
 
-                // Always arm geofence for assigned worksite to enable automatic arrival detection & work time start
                 armJobGeofence(job.jobId, centerPoint, 100f)
             }
         }
 
-        // Plot Worker Accommodation marker
-        accommodationMarker = map.addMarker(
-            MarkerOptions()
-                .position(accommodationLatLng)
-                .title("Accommodation")
-                .snippet("Block A, Room 203")
-                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ORANGE))
-        )
-        boundsBuilder.include(accommodationLatLng)
+        // 2. Plot Worker Accommodation from Website ONLY (Orange Marker & Orange Perimeter)
+        val acc = liveAccommodation
+        if (acc != null && acc.location.isNotEmpty()) {
+            val accPoints = acc.location.map { LatLng(it.latitude, it.longitude) }
+            val accCenter = accPoints[0]
+            assignedStayCenter = accCenter
+            hasPoints = true
+            accPoints.forEach { boundsBuilder.include(it) }
+
+            // Draw Orange Perimeter for Accommodation
+            if (accPoints.size >= 3) {
+                map.addPolygon(
+                    PolygonOptions()
+                        .addAll(accPoints)
+                        .strokeColor(Color.parseColor("#EA580C"))
+                        .fillColor(Color.argb(40, 234, 88, 12))
+                        .strokeWidth(5f)
+                )
+            }
+
+            // Place Dedicated Orange Marker Pin
+            accommodationMarker = map.addMarker(
+                MarkerOptions()
+                    .position(accCenter)
+                    .title(acc.name ?: "Accommodation (Starting Point)")
+                    .snippet("Stay / Starting Point (${acc.code ?: "Stay"})")
+                    .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ORANGE))
+            )
+        }
 
         if (hasPoints) {
             try {
                 val bounds = boundsBuilder.build()
                 map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 120))
             } catch (e: Exception) {
-                map.moveCamera(CameraUpdateFactory.newLatLngZoom(accommodationLatLng, 14f))
+                assignedStayCenter?.let {
+                    map.moveCamera(CameraUpdateFactory.newLatLngZoom(it, 15f))
+                } ?: if (jobs.isNotEmpty() && jobs[0].location.isNotEmpty()) {
+                    val p = jobs[0].location[0]
+                    map.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(p.latitude, p.longitude), 15f))
+                }
             }
         }
 
-        // Render swipable top carousel cards
+        // Render swipable top carousel cards (worksite jobs only)
         populateMapCarousel(jobs)
     }
 
@@ -1323,7 +1350,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             switchTab(1)
 
             // Focus on accommodation LatLng
-            assignedStayLatLng?.let { mMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(it, 16f)) }
+            assignedStayCenter?.let { mMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(it, 16f)) }
             accommodationMarker?.showInfoWindow()
 
             Toast.makeText(this, "Accommodation focused: Block A, Room 203", Toast.LENGTH_LONG).show()
@@ -1534,16 +1561,48 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val sharedPrefs = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
         val isClockedIn = sharedPrefs.getBoolean("IS_CLOCKED_IN", false)
 
-        val stayJob = liveJobs.find { it.siteType == "accommodation" || it.isStartingPoint == true }
-        val workJobs = liveJobs.filter { it.siteType != "accommodation" && it.isStartingPoint != true }
+        // Stay departure evaluation
+        val acc = liveAccommodation
+        if (acc != null && acc.location.isNotEmpty()) {
+            val stayPt = acc.location[0]
+            val stayDist = FloatArray(1)
+            android.location.Location.distanceBetween(lat, lng, stayPt.latitude, stayPt.longitude, stayDist)
+            val isCurrentlyInsideStay = stayDist[0] <= 80f
+            val wasInsideStay = sharedPrefs.getBoolean("WAS_INSIDE_STAY", false)
 
-        // Dynamic accommodation location
-        val stayLat = stayJob?.location?.firstOrNull()?.latitude ?: accommodationLatLng.latitude
-        val stayLng = stayJob?.location?.firstOrNull()?.longitude ?: accommodationLatLng.longitude
+            if (isCurrentlyInsideStay) {
+                if (!wasInsideStay) {
+                    sharedPrefs.edit().putBoolean("WAS_INSIDE_STAY", true).apply()
+                }
+            } else {
+                if (wasInsideStay) {
+                    sharedPrefs.edit().putBoolean("WAS_INSIDE_STAY", false).apply()
+                    if (!isClockedIn) {
+                        val now = System.currentTimeMillis()
+                        val primaryJobId = liveJobs.firstOrNull()?.jobId ?: loggedInWorkerId
+                        sharedPrefs.edit()
+                            .putBoolean("IS_CLOCKED_IN", true)
+                            .putBoolean("IS_SYSTEM_ARMED", true)
+                            .putLong("CLOCK_IN_TIMESTAMP", now)
+                            .putString("ACTIVE_JOB_ID", primaryJobId)
+                            .apply()
 
-        val stayDist = FloatArray(1)
-        android.location.Location.distanceBetween(lat, lng, stayLat, stayLng, stayDist)
-        val isCurrentlyInsideStay = stayDist[0] <= 80f
+                        startTimeMillis = now
+                        updateClockInOutUi(true)
+                        WorkNotificationManager.showClockInNotification(this, primaryJobId, isAuto = true)
+                        EventReporter.reportEvent(
+                            context = this,
+                            eventType = "clock_in",
+                            jobId = primaryJobId,
+                            latitude = lat,
+                            longitude = lng
+                        )
+                        EventReporter.addLocalLog("Shift Started: Exited stay accommodation. Payroll tracking active.")
+                        startRadarServiceSafely()
+                    }
+                }
+            }
+        }
         val wasInsideStay = sharedPrefs.getBoolean("WAS_INSIDE_STAY", false)
 
         if (isCurrentlyInsideStay) {
@@ -1666,13 +1725,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private fun isCoordinateInsideJob(lat: Double, lng: Double, job: JobItem): Boolean {
         if (job.location.isEmpty()) return false
 
-        // 1. Guard check: Stay / Accommodation Safety Zone
-        // If worker is within 120m of their accommodation, they are NOT at a worksite.
-        val stayDist = FloatArray(1)
-        android.location.Location.distanceBetween(lat, lng, accommodationLatLng.latitude, accommodationLatLng.longitude, stayDist)
-        if (stayDist[0] <= 120f) {
-            return false
-        }
+
 
         // 2. Point-in-polygon ray-casting algorithm (for polygon worksites)
         val points = job.location
