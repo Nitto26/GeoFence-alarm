@@ -103,6 +103,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     // Live Jobs from Admin Panel Backend
     private var liveJobs: List<JobItem> = emptyList()
+    private var liveAccommodation: com.example.geoalarm.network.AccommodationItem? = null
 
     // Logged in Worker Profile
     private var loggedInWorkerId: String = ""
@@ -351,12 +352,18 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 
                 if (response.isSuccessful) {
                     val jobs = response.body()?.jobs ?: emptyList()
+                    val accommodation = response.body()?.accommodation
                     liveJobs = jobs
-                    val jobsJson = com.google.gson.Gson().toJson(jobs)
-                    getSharedPreferences("GeoPrefs", Context.MODE_PRIVATE)
-                        .edit()
-                        .putString("CACHED_JOBS_JSON", jobsJson)
-                        .apply()
+                    liveAccommodation = accommodation
+
+                    val geoEditor = getSharedPreferences("GeoPrefs", Context.MODE_PRIVATE).edit()
+                    geoEditor.putString("CACHED_JOBS_JSON", com.google.gson.Gson().toJson(jobs))
+                    if (accommodation != null) {
+                        geoEditor.putString("CACHED_ACCOMMODATION_JSON", com.google.gson.Gson().toJson(accommodation))
+                    } else {
+                        geoEditor.remove("CACHED_ACCOMMODATION_JSON")
+                    }
+                    geoEditor.apply()
 
                     jobsUpdated = true
                     withContext(Dispatchers.Main) {

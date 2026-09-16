@@ -18,6 +18,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import com.example.geoalarm.network.AccommodationItem
 import com.example.geoalarm.network.EventReporter
 import com.example.geoalarm.network.JobItem
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -36,8 +37,6 @@ class RadarService : Service() {
     private lateinit var locationCallback: LocationCallback
     private var lastPingTimestamp = 0L
     private var lastInsideJobId: String? = null
-    private val accommodationLat = 10.5182
-    private val accommodationLng = 76.2090
 
     companion object {
         private const val TAG = "RadarService"
@@ -49,7 +48,6 @@ class RadarService : Service() {
         super.onCreate()
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
-        // Dynamically register the location state receiver for Sabotage detection
         try {
             val filter = IntentFilter().apply {
                 addAction(LocationManager.PROVIDERS_CHANGED_ACTION)
@@ -119,8 +117,8 @@ class RadarService : Service() {
         val isClockedIn = sharedPrefs.getBoolean("IS_CLOCKED_IN", false)
         val activeJobId = sharedPrefs.getString("ACTIVE_JOB_ID", "Assigned Worksite") ?: "Assigned Worksite"
 
-        val title = if (isClockedIn) "🟢 Shift Active — $activeJobId" else "🚗 Travel Radar Active"
-        val text = if (isClockedIn) "Attendance & payroll tracking running in background" else "Monitoring worksite arrival..."
+        val title = if (isClockedIn) "Shift Active • $activeJobId" else "Travel Radar Active"
+        val text = if (isClockedIn) "Attendance & payroll tracking running in background" else "Monitoring departure and worksite arrival..."
 
         val openAppIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -168,16 +166,17 @@ class RadarService : Service() {
                 val currentJobId = sharedPrefs.getString("ACTIVE_JOB_ID", "JOB-1001") ?: "JOB-1001"
 
                 val jobs = loadCachedJobs()
+                val accommodation = loadCachedAccommodation()
 
                 for (location in locationResult.locations) {
                     val lat = location.latitude
                     val lng = location.longitude
                     val now = System.currentTimeMillis()
 
-                    // 1. Process Background Worksite Arrival Radar
-                    processLocationAgainstJobs(lat, lng, jobs)
+                    // 1. Process Background Worksite Arrival and Stay Departure Radar
+                    processLocationAgainstJobsAndStay(lat, lng, jobs, accommodation)
 
-                    // 2. Periodic Ping Dispatching every 30 seconds if Clocked In
+                    // 2. Periodic Silent Ping Dispatching every 30 seconds if Clocked In (NO NOTIFICATION)
                     if (isClockedIn && (now - lastPingTimestamp >= 30_000L)) {
                         lastPingTimestamp = now
                         EventReporter.reportEvent(
@@ -195,73 +194,78 @@ class RadarService : Service() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             try {
                 fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper())
-                Log.d(TAG, "✓ RadarService location updates active (3s interval, high accuracy)")
+                Log.d(TAG, "RadarService location updates active (3s interval, high accuracy)")
             } catch (e: SecurityException) {
                 Log.e(TAG, "SecurityException requesting location updates: ${e.message}")
             }
         }
     }
 
-    private fun processLocationAgainstJobs(lat: Double, lng: Double, jobs: List<JobItem>) {
+    private fun processLocationAgainstJobsAndStay(
+        lat: Double, 
+        lng: Double, 
+        jobs: List<JobItem>, 
+        accommodation: AccommodationItem?
+    ) {
         val sharedPrefs = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
         val isClockedIn = sharedPrefs.getBoolean("IS_CLOCKED_IN", false)
 
-        val stayJob = jobs.find { it.siteType == "accommodation" || it.isStartingPoint == true }
-        val workJobs = jobs.filter { it.siteType != "accommodation" && it.isStartingPoint != true }
+        // 1. Evaluate Stay / Accommodation Departure
+        if (accommodation != null && accommodation.location.isNotEmpty()) {
+            val stayDist = FloatArray(1)
+            val stayPt = accommodation.location[0]
+            android.location.Location.distanceBetween(lat, lng, stayPt.latitude, stayPt.longitude, stayDist)
+            
+            val isInsideStay = stayDist[0] <= 80f
+            val wasInsideStay = sharedPrefs.getBoolean("WAS_INSIDE_STAY", false)
 
-        val stayLat = stayJob?.location?.firstOrNull()?.latitude ?: accommodationLat
-        val stayLng = stayJob?.location?.firstOrNull()?.longitude ?: accommodationLng
+            if (isInsideStay) {
+                if (!wasInsideStay) {
+                    sharedPrefs.edit().putBoolean("WAS_INSIDE_STAY", true).apply()
+                }
+            } else {
+                // Outside stay
+                if (wasInsideStay) {
+                    // DEPARTED STAY / ACCOMMODATION -> AUTO CLOCK IN ONCE!
+                    sharedPrefs.edit().putBoolean("WAS_INSIDE_STAY", false).apply()
 
-        val stayDist = FloatArray(1)
-        android.location.Location.distanceBetween(lat, lng, stayLat, stayLng, stayDist)
-        val isCurrentlyInsideStay = stayDist[0] <= 80f
-        val wasInsideStay = sharedPrefs.getBoolean("WAS_INSIDE_STAY", false)
+                    if (!isClockedIn) {
+                        val now = System.currentTimeMillis()
+                        val primaryJobId = jobs.firstOrNull()?.jobId ?: "Assigned Worksite"
+                        sharedPrefs.edit()
+                            .putBoolean("IS_CLOCKED_IN", true)
+                            .putBoolean("IS_SYSTEM_ARMED", true)
+                            .putLong("CLOCK_IN_TIMESTAMP", now)
+                            .putString("ACTIVE_JOB_ID", primaryJobId)
+                            .apply()
 
-        if (isCurrentlyInsideStay) {
-            if (!wasInsideStay) {
-                sharedPrefs.edit().putBoolean("WAS_INSIDE_STAY", true).apply()
-            }
-        } else {
-            // Worker is outside stay
-            if (wasInsideStay) {
-                // EXITED STAY -> TRIGGER AUTO CLOCK IN!
-                sharedPrefs.edit().putBoolean("WAS_INSIDE_STAY", false).apply()
+                        updateForegroundNotification()
+                        WorkNotificationManager.showClockInNotification(this, primaryJobId, isAuto = true)
 
-                if (!isClockedIn) {
-                    val now = System.currentTimeMillis()
-                    val primaryJobId = workJobs.firstOrNull()?.jobId ?: "Assigned Worksite"
-                    sharedPrefs.edit()
-                        .putBoolean("IS_CLOCKED_IN", true)
-                        .putBoolean("IS_SYSTEM_ARMED", true)
-                        .putLong("CLOCK_IN_TIMESTAMP", now)
-                        .putString("ACTIVE_JOB_ID", primaryJobId)
-                        .apply()
+                        EventReporter.reportEvent(
+                            context = this,
+                            eventType = "clock_in",
+                            jobId = primaryJobId,
+                            latitude = lat,
+                            longitude = lng
+                        )
+                        EventReporter.addLocalLog("Shift Auto-Started: Exited accommodation. Payroll timer active.")
 
-                    updateForegroundNotification()
-                    WorkNotificationManager.showClockInNotification(this, primaryJobId, isAuto = true)
-
-                    EventReporter.reportEvent(
-                        context = this,
-                        eventType = "clock_in",
-                        jobId = primaryJobId,
-                        latitude = lat,
-                        longitude = lng
-                    )
-                    EventReporter.addLocalLog("🚀 Background Shift Started: Exited stay accommodation. Payroll tracking active.")
-
-                    val stateIntent = Intent(GeofenceBroadcastReceiver.ACTION_WORK_STATE_CHANGED).apply {
-                        putExtra("IS_CLOCKED_IN", true)
-                        putExtra("CLOCK_IN_TIMESTAMP", now)
-                        putExtra("ACTIVE_JOB_ID", primaryJobId)
-                        setPackage(packageName)
+                        val stateIntent = Intent(GeofenceBroadcastReceiver.ACTION_WORK_STATE_CHANGED).apply {
+                            putExtra("IS_CLOCKED_IN", true)
+                            putExtra("CLOCK_IN_TIMESTAMP", now)
+                            putExtra("ACTIVE_JOB_ID", primaryJobId)
+                            setPackage(packageName)
+                        }
+                        sendBroadcast(stateIntent)
                     }
-                    sendBroadcast(stateIntent)
                 }
             }
         }
 
+        // 2. Evaluate Assigned Worksite Geofences
         var matchedJob: JobItem? = null
-        for (job in workJobs) {
+        for (job in jobs) {
             if (isCoordinateInsideJob(lat, lng, job)) {
                 matchedJob = job
                 break
@@ -270,11 +274,12 @@ class RadarService : Service() {
 
         if (matchedJob != null) {
             val jobId = matchedJob.jobId
-            if (lastInsideJobId != jobId || !isClockedIn) {
+            // Only trigger state change if we newly entered this worksite
+            if (lastInsideJobId != jobId) {
                 lastInsideJobId = jobId
 
                 if (!isClockedIn) {
-                    // AUTO CLOCK IN ON ARRIVAL
+                    // Auto Clock In upon arrival at worksite
                     val now = System.currentTimeMillis()
                     sharedPrefs.edit()
                         .putBoolean("IS_CLOCKED_IN", true)
@@ -300,9 +305,8 @@ class RadarService : Service() {
                         latitude = lat,
                         longitude = lng
                     )
-                    EventReporter.addLocalLog("✓ Background Arrival: Work time started at $jobId. Payroll active.")
+                    EventReporter.addLocalLog("Background Arrival: Work time started at $jobId.")
 
-                    // Broadcast to MainActivity if active
                     val stateIntent = Intent(GeofenceBroadcastReceiver.ACTION_WORK_STATE_CHANGED).apply {
                         putExtra("IS_CLOCKED_IN", true)
                         putExtra("CLOCK_IN_TIMESTAMP", now)
@@ -311,6 +315,7 @@ class RadarService : Service() {
                     }
                     sendBroadcast(stateIntent)
                 } else {
+                    // Already clocked in, newly crossed into this worksite
                     WorkNotificationManager.showGeofenceEntryNotification(this, jobId)
                     EventReporter.reportEvent(
                         context = this,
@@ -328,30 +333,25 @@ class RadarService : Service() {
                 val exitedJobId = lastInsideJobId ?: "Worksite"
                 lastInsideJobId = null
 
-                WorkNotificationManager.showGeofenceExitNotification(this, exitedJobId)
-                EventReporter.reportEvent(
-                    context = this,
-                    eventType = "exit",
-                    jobId = exitedJobId,
-                    latitude = lat,
-                    longitude = lng
-                )
-                EventReporter.addLocalLog("⚠️ Worksite boundary exit ($exitedJobId)")
+                if (isClockedIn) {
+                    WorkNotificationManager.showGeofenceExitNotification(this, exitedJobId)
+                    EventReporter.reportEvent(
+                        context = this,
+                        eventType = "exit",
+                        jobId = exitedJobId,
+                        latitude = lat,
+                        longitude = lng
+                    )
+                    EventReporter.addLocalLog("Worksite boundary exit ($exitedJobId)")
+                }
             }
         }
     }
 
     private fun isCoordinateInsideJob(lat: Double, lng: Double, job: JobItem): Boolean {
         if (job.location.isEmpty()) return false
-
-        // Guard: Stay / Accommodation Safety Zone
-        val stayDist = FloatArray(1)
-        android.location.Location.distanceBetween(lat, lng, accommodationLat, accommodationLng, stayDist)
-        if (stayDist[0] <= 120f) {
-            return false
-        }
-
         val points = job.location
+
         if (points.size >= 3) {
             var inside = false
             var j = points.size - 1
@@ -369,7 +369,7 @@ class RadarService : Service() {
             for (coord in points) {
                 val dist = FloatArray(1)
                 android.location.Location.distanceBetween(lat, lng, coord.latitude, coord.longitude, dist)
-                if (dist[0] <= 40f) {
+                if (dist[0] <= 35f) {
                     return true
                 }
             }
@@ -378,7 +378,7 @@ class RadarService : Service() {
             for (coord in points) {
                 val dist = FloatArray(1)
                 android.location.Location.distanceBetween(lat, lng, coord.latitude, coord.longitude, dist)
-                if (dist[0] <= 75f) {
+                if (dist[0] <= 60f) {
                     return true
                 }
             }
@@ -397,6 +397,16 @@ class RadarService : Service() {
         }
     }
 
+    private fun loadCachedAccommodation(): AccommodationItem? {
+        val geoPrefs = getSharedPreferences("GeoPrefs", Context.MODE_PRIVATE)
+        val json = geoPrefs.getString("CACHED_ACCOMMODATION_JSON", null) ?: return null
+        return try {
+            Gson().fromJson(json, AccommodationItem::class.java)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
@@ -408,8 +418,6 @@ class RadarService : Service() {
         }
         try {
             unregisterReceiver(locationStateReceiver)
-        } catch (e: Exception) {
-            Log.e(TAG, "Receiver unregister error: ${e.message}")
-        }
+        } catch (_: Exception) {}
     }
 }

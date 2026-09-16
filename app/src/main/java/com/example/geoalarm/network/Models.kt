@@ -10,14 +10,21 @@ data class LocationCoordinate(
 data class JobItem(
     @SerializedName("job_id") val jobId: String,
     @SerializedName("job_title") val jobTitle: String? = null,
-    @SerializedName("site_type") val siteType: String? = "job",
-    @SerializedName("is_starting_point") val isStartingPoint: Boolean? = false,
     @SerializedName("location") val location: List<LocationCoordinate>,
-    @SerializedName("days") val days: List<String>
+    @SerializedName("days") val days: List<String> = emptyList()
+)
+
+data class AccommodationItem(
+    @SerializedName("id") val id: String? = null,
+    @SerializedName("code") val code: String? = null,
+    @SerializedName("name") val name: String? = null,
+    @SerializedName("address") val address: String? = null,
+    @SerializedName("location") val location: List<LocationCoordinate> = emptyList()
 )
 
 data class MobileJobsResponse(
-    @SerializedName("jobs") val jobs: List<JobItem>
+    @SerializedName("jobs") val jobs: List<JobItem> = emptyList(),
+    @SerializedName("accommodation") val accommodation: AccommodationItem? = null
 )
 
 data class LocationEventItem(
@@ -62,5 +69,6 @@ data class MobileLoginResponse(
     @SerializedName("message") val message: String? = null,
     @SerializedName("worker") val worker: WorkerProfile? = null,
     @SerializedName("jobs") val jobs: List<JobItem>? = null,
+    @SerializedName("accommodation") val accommodation: AccommodationItem? = null,
     @SerializedName("transaction_id") val transactionId: String? = null
 )

@@ -20,12 +20,15 @@ object WorkNotificationManager {
     const val NOTIF_ID_GEOFENCE_ENTRY = 2003
     const val NOTIF_ID_GEOFENCE_EXIT = 2004
 
+    // Deduplication tracker: prevents repeating identical notifications on periodic pings
+    @Volatile
+    private var lastNotifiedStateKey: String = ""
+
     fun createNotificationChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
             val existing = nm.getNotificationChannel(CHANNEL_ID)
             if (existing == null) {
-                val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
                 val channel = NotificationChannel(
                     CHANNEL_ID,
                     "Work & Attendance Alerts",
@@ -43,32 +46,64 @@ object WorkNotificationManager {
         }
     }
 
+    @Synchronized
     fun showClockInNotification(context: Context, jobId: String, isAuto: Boolean = false) {
-        val title = if (isAuto) "🟢 Work Time Started!" else "🟢 Clocked In — Work Time Started"
-        val message = "Shift active for $jobId. Attendance & payroll timer is now running."
+        val key = "CLOCK_IN"
+        if (lastNotifiedStateKey == key) {
+            Log.d(TAG, "Suppressed duplicate Clock In notification")
+            return
+        }
+        lastNotifiedStateKey = key
+
+        val title = if (isAuto) "Shift Auto-Started" else "Clocked In"
+        val message = "Shift tracking active for $jobId. Attendance & payroll running."
         showNotification(context, NOTIF_ID_CLOCK_IN, title, message)
     }
 
+    @Synchronized
     fun showClockOutNotification(context: Context, jobId: String, durationStr: String = "") {
-        val title = "🔴 Clocked Out — Shift Ended"
+        val key = "CLOCK_OUT"
+        lastNotifiedStateKey = key
+
+        val title = "Clocked Out — Shift Ended"
         val message = if (durationStr.isNotEmpty()) {
-            "Shift ended for $jobId. Worked: $durationStr. Payroll recorded."
+            "Shift ended for $jobId. Worked: $durationStr. Attendance recorded."
         } else {
-            "Shift ended for $jobId. Attendance and payroll recorded."
+            "Shift ended for $jobId. Attendance recorded."
         }
         showNotification(context, NOTIF_ID_CLOCK_OUT, title, message)
     }
 
+    @Synchronized
     fun showGeofenceEntryNotification(context: Context, jobId: String) {
-        val title = "🟢 Inside Assigned Worksite"
-        val message = "You have entered $jobId. Shift tracking and attendance active."
+        val key = "ENTRY_$jobId"
+        if (lastNotifiedStateKey == key) {
+            Log.d(TAG, "Suppressed duplicate Entry notification for $jobId")
+            return
+        }
+        lastNotifiedStateKey = key
+
+        val title = "Entered Worksite"
+        val message = "You have arrived inside $jobId perimeter."
         showNotification(context, NOTIF_ID_GEOFENCE_ENTRY, title, message)
     }
 
+    @Synchronized
     fun showGeofenceExitNotification(context: Context, jobId: String) {
-        val title = "⚠️ Left Worksite Boundary"
-        val message = "You have moved outside the assigned worksite perimeter ($jobId)."
+        val key = "EXIT_$jobId"
+        if (lastNotifiedStateKey == key) {
+            Log.d(TAG, "Suppressed duplicate Exit notification for $jobId")
+            return
+        }
+        lastNotifiedStateKey = key
+
+        val title = "Left Worksite Perimeter"
+        val message = "You have exited $jobId boundary."
         showNotification(context, NOTIF_ID_GEOFENCE_EXIT, title, message)
+    }
+
+    fun resetNotificationState() {
+        lastNotifiedStateKey = ""
     }
 
     private fun showNotification(context: Context, notificationId: Int, title: String, message: String) {
@@ -93,7 +128,7 @@ object WorkNotificationManager {
                 .setContentTitle(title)
                 .setContentText(message)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(message))
-                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setCategory(NotificationCompat.CATEGORY_STATUS)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setSound(soundUri)
@@ -103,7 +138,7 @@ object WorkNotificationManager {
                 .build()
 
             nm.notify(notificationId, notification)
-            Log.d(TAG, "Posted OS-level notification [$notificationId]: $title")
+            Log.d(TAG, "Posted notification [$notificationId]: $title")
         } catch (e: Exception) {
             Log.e(TAG, "Error posting notification: ${e.message}")
         }
