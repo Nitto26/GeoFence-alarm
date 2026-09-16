@@ -1057,9 +1057,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 val bounds = boundsBuilder.build()
                 map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 120))
             } catch (e: Exception) {
-                assignedStayCenter?.let {
-                    map.moveCamera(CameraUpdateFactory.newLatLngZoom(it, 15f))
-                } ?: if (jobs.isNotEmpty() && jobs[0].location.isNotEmpty()) {
+                val stayCenter = assignedStayCenter
+                if (stayCenter != null) {
+                    map.moveCamera(CameraUpdateFactory.newLatLngZoom(stayCenter, 15f))
+                } else if (jobs.isNotEmpty() && jobs[0].location.isNotEmpty()) {
                     val p = jobs[0].location[0]
                     map.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(p.latitude, p.longitude), 15f))
                 }
@@ -1603,48 +1604,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 }
             }
         }
-        val wasInsideStay = sharedPrefs.getBoolean("WAS_INSIDE_STAY", false)
-
-        if (isCurrentlyInsideStay) {
-            if (!wasInsideStay) {
-                sharedPrefs.edit().putBoolean("WAS_INSIDE_STAY", true).apply()
-            }
-        } else {
-            // Worker is OUTSIDE stay
-            if (wasInsideStay) {
-                // EXITED STAY -> TRIGGER AUTO CLOCK-IN!
-                sharedPrefs.edit().putBoolean("WAS_INSIDE_STAY", false).apply()
-
-                if (!isClockedIn) {
-                    val now = System.currentTimeMillis()
-                    val primaryJobId = workJobs.firstOrNull()?.jobId ?: loggedInWorkerId
-                    sharedPrefs.edit()
-                        .putBoolean("IS_CLOCKED_IN", true)
-                        .putBoolean("IS_SYSTEM_ARMED", true)
-                        .putLong("CLOCK_IN_TIMESTAMP", now)
-                        .putString("ACTIVE_JOB_ID", primaryJobId)
-                        .apply()
-
-                    startTimeMillis = now
-                    updateClockInOutUi(true)
-
-                    WorkNotificationManager.showClockInNotification(this, primaryJobId, isAuto = true)
-
-                    EventReporter.reportEvent(
-                        context = this,
-                        eventType = "clock_in",
-                        jobId = primaryJobId,
-                        latitude = lat,
-                        longitude = lng
-                    )
-                    EventReporter.addLocalLog("🚀 Shift Started: Exited stay accommodation. Payroll tracking active.")
-                    startRadarServiceSafely()
-                }
-            }
-        }
 
         var matchedJob: JobItem? = null
-        for (job in workJobs) {
+        for (job in liveJobs) {
             if (isCoordinateInsideJob(lat, lng, job)) {
                 matchedJob = job
                 break
@@ -1708,16 +1670,18 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 val exitedJobId = lastInsideJobId ?: "Worksite"
                 lastInsideJobId = null
 
-                WorkNotificationManager.showGeofenceExitNotification(this, exitedJobId)
+                if (isClockedIn) {
+                    WorkNotificationManager.showGeofenceExitNotification(this, exitedJobId)
 
-                EventReporter.reportEvent(
-                    context = this,
-                    eventType = "exit",
-                    jobId = exitedJobId,
-                    latitude = lat,
-                    longitude = lng
-                )
-                EventReporter.addLocalLog("⚠️ Worksite boundary exit ($exitedJobId)")
+                    EventReporter.reportEvent(
+                        context = this,
+                        eventType = "exit",
+                        jobId = exitedJobId,
+                        latitude = lat,
+                        longitude = lng
+                    )
+                    EventReporter.addLocalLog("⚠️ Worksite boundary exit ($exitedJobId)")
+                }
             }
         }
     }
