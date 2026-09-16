@@ -20,6 +20,9 @@ object EventReporter {
         addLocalLog("System initialized. Monitoring active.")
     }
 
+    // Deduplication tracker for non-ping state change events
+    private val lastReportedEvents = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
     fun addLocalLog(message: String) {
         val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
         liveSystemLogs.add(0, "[$timeStr] $message")
@@ -35,6 +38,17 @@ object EventReporter {
         latitude: Double = 0.0,
         longitude: Double = 0.0
     ) {
+        val now = System.currentTimeMillis()
+        val eventKey = "$eventType-${jobId ?: ""}"
+        val lastTime = lastReportedEvents[eventKey] ?: 0L
+
+        // Deduplicate non-ping events if reported within last 15 seconds
+        if (eventType != "ping" && (now - lastTime < 15_000L)) {
+            Log.d(TAG, "Suppressed duplicate event dispatch: $eventKey (already reported ${(now - lastTime)/1000}s ago)")
+            return
+        }
+        lastReportedEvents[eventKey] = now
+
         val isoTimestamp = getIsoTimestamp()
         val displayJob = jobId ?: "Device"
         addLocalLog("Event recorded: $eventType ($displayJob)")

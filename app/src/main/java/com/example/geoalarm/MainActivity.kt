@@ -1712,8 +1712,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         if (matchedJob != null) {
             val jobId = matchedJob.jobId
-            // Trigger if we moved into a new worksite or if we weren't clocked in yet
-            if (lastInsideJobId != jobId || !isClockedIn) {
+            // Trigger strictly when transitioning into a new worksite
+            if (lastInsideJobId != jobId) {
                 lastInsideJobId = jobId
 
                 if (!isClockedIn) {
