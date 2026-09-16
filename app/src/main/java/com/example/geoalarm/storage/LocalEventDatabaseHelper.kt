@@ -78,6 +78,13 @@ class LocalEventDatabaseHelper private constructor(context: Context) :
         onCreate(db)
     }
 
+    override fun onOpen(db: SQLiteDatabase) {
+        super.onOpen(db)
+        try {
+            db.execSQL("DELETE FROM $TABLE_EVENTS WHERE (abs($COL_LATITUDE - 10.5276) < 0.001 AND abs($COL_LONGITUDE - 76.2144) < 0.001) OR ($COL_LATITUDE = 0.0 AND $COL_LONGITUDE = 0.0)")
+        } catch (_: Exception) {}
+    }
+
     /**
      * Inserts an event record and automatically purges events older than 3 days.
      */
