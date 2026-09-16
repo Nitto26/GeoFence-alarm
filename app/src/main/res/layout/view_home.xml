@@ -155,7 +155,7 @@
                         android:id="@+id/tvWorksitesCountToday"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="3 worksites today"
+                        android:text="0 worksites today"
                         android:textColor="@color/brand_blue"
                         android:textSize="20sp"
                         android:textStyle="bold"
@@ -369,7 +369,7 @@
                     android:layout_height="wrap_content"
                     android:layout_below="@id/tvNextWorksiteLabel"
                     android:layout_marginTop="6dp"
-                    android:text="Construction Site A"
+                    android:text="No Worksite Scheduled"
                     android:textColor="@color/text_primary"
                     android:textSize="18sp"
                     android:textStyle="bold" />
@@ -380,7 +380,7 @@
                     android:layout_height="wrap_content"
                     android:layout_below="@id/tvNextWorksiteTitle"
                     android:layout_marginTop="2dp"
-                    android:text="10:00 AM – 1:00 PM"
+                    android:text="Standby"
                     android:textColor="@color/brand_blue"
                     android:textSize="14sp"
                     android:textStyle="bold" />
@@ -406,7 +406,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="8dp"
-                        android:text="Electrical Installation"
+                        android:text="—"
                         android:textColor="@color/text_primary"
                         android:textSize="13sp" />
                 </LinearLayout>

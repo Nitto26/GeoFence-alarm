@@ -342,6 +342,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         mainFusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         startLiveLocationTracking()
 
+        // Initialize UI with zero worksites state before server sync
+        updateHomeUiWithLiveJobs(emptyList())
+
         // Fetch Live Profile & Schedule from Admin Panel Backend
         syncAndRefreshServerData(showUserFeedback = false)
     }
@@ -485,22 +488,26 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val tvWorksitesCountToday = findViewById<TextView>(R.id.tvWorksitesCountToday)
         val tvNextWorksiteTitle = findViewById<TextView>(R.id.tvNextWorksiteTitle)
         val tvNextWorksiteTime = findViewById<TextView>(R.id.tvNextWorksiteTime)
+        val tvNextWorksiteRole = findViewById<TextView>(R.id.tvNextWorksiteRole)
+        val tvNextSupervisor = findViewById<TextView>(R.id.tvNextSupervisor)
 
         // Filter out accommodation so stay is not shown as a job
         val workJobs = jobs.filter { it.siteType != "accommodation" && it.isStartingPoint != true }
 
-        tvWorksitesCountToday?.text = "${workJobs.size} worksites today"
+        tvWorksitesCountToday?.text = "${workJobs.size} worksite${if (workJobs.size == 1) "" else "s"} today"
 
         if (workJobs.isNotEmpty()) {
             val firstJob = workJobs[0]
             tvNextWorksiteTitle?.text = firstJob.jobTitle ?: firstJob.jobId
             val activeDays = firstJob.days.joinToString(", ")
-            if (activeDays.isNotEmpty()) {
-                tvNextWorksiteTime?.text = "Active: $activeDays"
-            }
+            tvNextWorksiteTime?.text = if (activeDays.isNotEmpty()) "Active: $activeDays" else "Scheduled"
+            tvNextWorksiteRole?.text = firstJob.jobTitle ?: "Assigned Work"
+            tvNextSupervisor?.text = "Field Operations"
         } else {
             tvNextWorksiteTitle?.text = "No Worksite Scheduled"
             tvNextWorksiteTime?.text = "Standby"
+            tvNextWorksiteRole?.text = "—"
+            tvNextSupervisor?.text = "—"
         }
     }
 

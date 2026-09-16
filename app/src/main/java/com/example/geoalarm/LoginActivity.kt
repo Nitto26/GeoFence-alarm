@@ -71,8 +71,8 @@ class LoginActivity : AppCompatActivity() {
             val username = etUsername.text.toString().trim()
             val password = etPassword.text.toString().trim()
 
-            if (username.isEmpty()) {
-                etUsername.error = "Please enter your Tally ID / Worker ID"
+            if (username.isEmpty() || !username.all { it.isDigit() }) {
+                etUsername.error = "Please enter a valid numeric Tally Number (e.g. 12345)"
                 etUsername.requestFocus()
                 return@setOnClickListener
             }

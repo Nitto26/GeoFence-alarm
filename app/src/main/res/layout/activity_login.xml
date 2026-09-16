@@ -100,10 +100,13 @@
                 android:layout_height="match_parent"
                 android:layout_marginStart="12dp"
                 android:background="@null"
-                android:hint="Tally ID / Worker Code"
+                android:hint="Tally Number (e.g. 12345)"
                 android:textColorHint="@color/text_hint"
                 android:textColor="@color/text_primary"
                 android:textSize="15sp"
+                android:inputType="number"
+                android:digits="0123456789"
+                android:maxLength="10"
                 android:singleLine="true" />
         </LinearLayout>
 

@@ -110,7 +110,7 @@
                     android:id="@+id/tvMapDetailTitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Construction Site A"
+                    android:text="No Worksite Selected"
                     android:textColor="@color/text_primary"
                     android:textSize="17sp"
                     android:textStyle="bold"
@@ -123,7 +123,7 @@
                     android:layout_height="wrap_content"
                     android:layout_below="@id/tvMapDetailTitle"
                     android:layout_marginTop="2dp"
-                    android:text="10:00 AM – 1:00 PM"
+                    android:text="Standby"
                     android:textColor="@color/brand_blue"
                     android:textSize="13sp"
                     android:textStyle="bold" />
