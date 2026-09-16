@@ -42,25 +42,26 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
         val triggeringGeofences = geofencingEvent.triggeringGeofences ?: emptyList()
         val triggeringLocation = geofencingEvent.triggeringLocation
 
-        val lat = triggeringLocation?.latitude ?: 10.5276
-        val lng = triggeringLocation?.longitude ?: 76.2144
-
         // Guard: check cached accommodation if present
         val geoPrefs = context.getSharedPreferences("GeoPrefs", Context.MODE_PRIVATE)
         val accJson = geoPrefs.getString("CACHED_ACCOMMODATION_JSON", null)
-        if (accJson != null) {
+        val cachedAcc = if (accJson != null) {
             try {
-                val acc = com.google.gson.Gson().fromJson(accJson, com.example.geoalarm.network.AccommodationItem::class.java)
-                if (acc != null && acc.location.isNotEmpty()) {
-                    val stayPt = acc.location[0]
-                    val stayDist = FloatArray(1)
-                    android.location.Location.distanceBetween(lat, lng, stayPt.latitude, stayPt.longitude, stayDist)
-                    if (stayDist[0] <= 70f) {
-                        Log.d(TAG, "Triggering location is inside Stay Accommodation (${stayDist[0].toInt()}m). Ignoring worksite entry.")
-                        return
-                    }
-                }
-            } catch (_: Exception) {}
+                com.google.gson.Gson().fromJson(accJson, com.example.geoalarm.network.AccommodationItem::class.java)
+            } catch (_: Exception) { null }
+        } else null
+
+        val lat = triggeringLocation?.latitude ?: (cachedAcc?.location?.firstOrNull()?.latitude ?: 0.0)
+        val lng = triggeringLocation?.longitude ?: (cachedAcc?.location?.firstOrNull()?.longitude ?: 0.0)
+
+        if (cachedAcc != null && cachedAcc.location.isNotEmpty()) {
+            val stayPt = cachedAcc.location[0]
+            val stayDist = FloatArray(1)
+            android.location.Location.distanceBetween(lat, lng, stayPt.latitude, stayPt.longitude, stayDist)
+            if (stayDist[0] <= 70f) {
+                Log.d(TAG, "Triggering location is inside Stay Accommodation (${stayDist[0].toInt()}m). Ignoring worksite entry.")
+                return
+            }
         }
 
         val sharedPrefs = context.getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)

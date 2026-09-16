@@ -122,13 +122,19 @@ class LoginActivity : AppCompatActivity() {
                                     .putString("WORKER_PHONE", workerPhone)
                                     .apply()
 
-                                // Dispatch Login event to backend
+                                val acc = body.accommodation
+                                val startLat = acc?.location?.firstOrNull()?.latitude
+                                    ?: (if (jobs.isNotEmpty() && jobs[0].location.isNotEmpty()) jobs[0].location[0].latitude else 0.0)
+                                val startLng = acc?.location?.firstOrNull()?.longitude
+                                    ?: (if (jobs.isNotEmpty() && jobs[0].location.isNotEmpty()) jobs[0].location[0].longitude else 0.0)
+
+                                // Dispatch Login event to backend with assigned accommodation coordinates
                                 EventReporter.reportEvent(
                                     context = this@LoginActivity,
                                     eventType = "login",
-                                    jobId = if (jobs.isNotEmpty()) jobs[0].jobId else workerId,
-                                    latitude = 10.5276,
-                                    longitude = 76.2144
+                                    jobId = acc?.code ?: (if (jobs.isNotEmpty()) jobs[0].jobId else workerId),
+                                    latitude = startLat,
+                                    longitude = startLng
                                 )
 
                                 Toast.makeText(

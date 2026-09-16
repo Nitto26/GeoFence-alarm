@@ -119,6 +119,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     // Assigned Accommodation from Website (null if not assigned)
     private var assignedStayCenter: LatLng? = null
+    private var currentGpsLocation: LatLng? = null
 
     // Handlers for Clock, Shift Timer, and Periodic Server Refresh
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -829,13 +830,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 }
             }
 
+            val eventLat = currentGpsLocation?.latitude ?: assignedStayCenter?.latitude ?: (if (liveJobs.isNotEmpty() && liveJobs[0].location.isNotEmpty()) liveJobs[0].location[0].latitude else 0.0)
+            val eventLng = currentGpsLocation?.longitude ?: assignedStayCenter?.longitude ?: (if (liveJobs.isNotEmpty() && liveJobs[0].location.isNotEmpty()) liveJobs[0].location[0].longitude else 0.0)
+
             // 3. Dispatch Clock In event (stored locally and synced)
             EventReporter.reportEvent(
                 context = this,
                 eventType = "clock_in",
                 jobId = activeJobId,
-                latitude = 10.5276,
-                longitude = 76.2144
+                latitude = eventLat,
+                longitude = eventLng
             )
             EventReporter.addLocalLog("Worker Clocked In. Background radar & geofences armed.")
 
@@ -875,13 +879,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             // 3. Stop any ringing alarms
             AlarmController.stopAlarm(this)
 
+            val eventLat = currentGpsLocation?.latitude ?: assignedStayCenter?.latitude ?: (if (liveJobs.isNotEmpty() && liveJobs[0].location.isNotEmpty()) liveJobs[0].location[0].latitude else 0.0)
+            val eventLng = currentGpsLocation?.longitude ?: assignedStayCenter?.longitude ?: (if (liveJobs.isNotEmpty() && liveJobs[0].location.isNotEmpty()) liveJobs[0].location[0].longitude else 0.0)
+
             // 4. Dispatch Clock Out event (stored locally and synced)
             EventReporter.reportEvent(
                 context = this,
                 eventType = "clock_out",
                 jobId = activeJobId,
-                latitude = 10.5276,
-                longitude = 76.2144
+                latitude = eventLat,
+                longitude = eventLng
             )
             EventReporter.addLocalLog("Worker Clocked Out. System entered sleep mode.")
 
@@ -946,7 +953,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         if (liveJobs.isNotEmpty()) {
             renderJobsOnMap(liveJobs)
         } else {
-            val defaultLoc = LatLng(10.5276, 76.2144)
+            val defaultLoc = assignedStayCenter ?: (if (liveJobs.isNotEmpty() && liveJobs[0].location.isNotEmpty()) LatLng(liveJobs[0].location[0].latitude, liveJobs[0].location[0].longitude) else LatLng(0.0, 0.0))
             mMap?.moveCamera(CameraUpdateFactory.newLatLngZoom(defaultLoc, 15f))
         }
 
@@ -1639,6 +1646,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         mainLocationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 for (loc in result.locations) {
+                    currentGpsLocation = LatLng(loc.latitude, loc.longitude)
                     checkAndTriggerWorksiteArrival(loc.latitude, loc.longitude)
                 }
             }
