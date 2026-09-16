@@ -181,6 +181,17 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 }
             }
 
+            // Continuously verify and sync Clock In/Out button state
+            val btnClockToggle = findViewById<com.google.android.material.button.MaterialButton>(R.id.btnClockToggle)
+            if (btnClockToggle != null) {
+                val currentText = btnClockToggle.text?.toString() ?: ""
+                if (isClockedIn && currentText != "Clock Out") {
+                    updateClockInOutUi(true)
+                } else if (!isClockedIn && currentText != "Clock In") {
+                    updateClockInOutUi(false)
+                }
+            }
+
             mainHandler.postDelayed(this, 1000)
         }
     }
@@ -901,7 +912,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     private fun updateClockInOutUi(isClockedIn: Boolean) {
-        val tvAttendanceStatus = findViewById<TextView>(R.id.tvAttendanceStatus)
+        runOnUiThread {
+            val tvAttendanceStatus = findViewById<TextView>(R.id.tvAttendanceStatus)
         val tvAttendanceSubtitle = findViewById<TextView>(R.id.tvAttendanceSubtitle)
         val ivAttendanceIcon = findViewById<ImageView>(R.id.ivAttendanceIcon)
         val btnClockToggle = findViewById<MaterialButton>(R.id.btnClockToggle)
@@ -935,6 +947,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             btnClockToggle?.iconTint = ColorStateList.valueOf(Color.WHITE)
 
             tvHoursWorkedLabel?.text = "Shift Paused (Sleep Mode)"
+        }
         }
     }
 

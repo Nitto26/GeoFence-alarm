@@ -237,7 +237,7 @@ class RadarService : Service() {
                             .putBoolean("IS_SYSTEM_ARMED", true)
                             .putLong("CLOCK_IN_TIMESTAMP", now)
                             .putString("ACTIVE_JOB_ID", primaryJobId)
-                            .apply()
+                            .commit()
 
                         updateForegroundNotification()
                         WorkNotificationManager.showClockInNotification(this, primaryJobId, isAuto = true)
@@ -286,7 +286,7 @@ class RadarService : Service() {
                         .putBoolean("IS_SYSTEM_ARMED", true)
                         .putLong("CLOCK_IN_TIMESTAMP", now)
                         .putString("ACTIVE_JOB_ID", jobId)
-                        .apply()
+                        .commit()
 
                     updateForegroundNotification()
                     WorkNotificationManager.showClockInNotification(this, jobId, isAuto = true)

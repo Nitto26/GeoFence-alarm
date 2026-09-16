@@ -82,7 +82,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                         .putBoolean("IS_SYSTEM_ARMED", true)
                         .putLong("CLOCK_IN_TIMESTAMP", now)
                         .putString("ACTIVE_JOB_ID", jobId)
-                        .apply()
+                        .commit()
 
                     Log.d(TAG, "✓ Work time & Payroll timer automatically started at $now")
 
