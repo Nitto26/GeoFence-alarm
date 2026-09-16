@@ -11,7 +11,9 @@ data class JobItem(
     @SerializedName("job_id") val jobId: String,
     @SerializedName("job_title") val jobTitle: String? = null,
     @SerializedName("location") val location: List<LocationCoordinate>,
-    @SerializedName("days") val days: List<String> = emptyList()
+    @SerializedName("days") val days: List<String> = emptyList(),
+    @SerializedName("site_type") val siteType: String? = null,
+    @SerializedName("is_starting_point") val isStartingPoint: Boolean? = false
 )
 
 data class AccommodationItem(

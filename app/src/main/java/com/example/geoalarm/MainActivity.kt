@@ -116,8 +116,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private val worksiteMarkers = mutableMapOf<String, Marker>()
     private var accommodationMarker: Marker? = null
 
-    // Accommodation Location
-    private val accommodationLatLng = LatLng(10.5182, 76.2090)
+    // Assigned Accommodation from Website (null if not assigned)
+    private var assignedStayLatLng: LatLng? = null
 
     // Handlers for Clock, Shift Timer, and Periodic Server Refresh
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -1323,7 +1323,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             switchTab(1)
 
             // Focus on accommodation LatLng
-            mMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(accommodationLatLng, 16f))
+            assignedStayLatLng?.let { mMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(it, 16f)) }
             accommodationMarker?.showInfoWindow()
 
             Toast.makeText(this, "Accommodation focused: Block A, Room 203", Toast.LENGTH_LONG).show()

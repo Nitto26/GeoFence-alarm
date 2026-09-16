@@ -45,12 +45,22 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
         val lat = triggeringLocation?.latitude ?: 10.5276
         val lng = triggeringLocation?.longitude ?: 76.2144
 
-        // Guard against premature trigger inside Stay Accommodation zone
-        val stayDist = FloatArray(1)
-        android.location.Location.distanceBetween(lat, lng, 10.5182, 76.2090, stayDist)
-        if (stayDist[0] <= 120f) {
-            Log.d(TAG, "Triggering location is within Stay Accommodation safety zone (${stayDist[0].toInt()}m). Ignoring geofence.")
-            return
+        // Guard: check cached accommodation if present
+        val geoPrefs = context.getSharedPreferences("GeoPrefs", Context.MODE_PRIVATE)
+        val accJson = geoPrefs.getString("CACHED_ACCOMMODATION_JSON", null)
+        if (accJson != null) {
+            try {
+                val acc = com.google.gson.Gson().fromJson(accJson, com.example.geoalarm.network.AccommodationItem::class.java)
+                if (acc != null && acc.location.isNotEmpty()) {
+                    val stayPt = acc.location[0]
+                    val stayDist = FloatArray(1)
+                    android.location.Location.distanceBetween(lat, lng, stayPt.latitude, stayPt.longitude, stayDist)
+                    if (stayDist[0] <= 70f) {
+                        Log.d(TAG, "Triggering location is inside Stay Accommodation (${stayDist[0].toInt()}m). Ignoring worksite entry.")
+                        return
+                    }
+                }
+            } catch (_: Exception) {}
         }
 
         val sharedPrefs = context.getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
