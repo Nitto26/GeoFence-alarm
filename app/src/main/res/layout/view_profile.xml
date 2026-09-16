@@ -332,18 +332,18 @@
 
         </LinearLayout>
 
-        <!-- Sync & Refresh Server Data Button -->
+        <!-- Change Password Button -->
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnRefreshProfile"
+            android:id="@+id/btnChangePassword"
             android:layout_width="match_parent"
             android:layout_height="50dp"
             android:layout_marginTop="24dp"
-            android:text="Sync &amp; Refresh Server Data"
+            android:text="Change Password"
             android:textColor="@color/brand_blue"
             android:textSize="14sp"
             android:textStyle="bold"
             android:textAllCaps="false"
-            app:icon="@android:drawable/ic_popup_sync"
+            app:icon="@drawable/ic_lock"
             app:iconGravity="textStart"
             app:iconTint="@color/brand_blue"
             app:backgroundTint="#EFF6FF"

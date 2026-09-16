@@ -74,3 +74,16 @@ data class MobileLoginResponse(
     @SerializedName("accommodation") val accommodation: AccommodationItem? = null,
     @SerializedName("transaction_id") val transactionId: String? = null
 )
+
+data class ChangePasswordRequest(
+    @SerializedName("worker_id") val workerId: String,
+    @SerializedName("old_password") val oldPassword: String,
+    @SerializedName("new_password") val newPassword: String
+)
+
+data class ChangePasswordResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("message") val message: String? = null,
+    @SerializedName("transaction_id") val transactionId: String? = null
+)
+

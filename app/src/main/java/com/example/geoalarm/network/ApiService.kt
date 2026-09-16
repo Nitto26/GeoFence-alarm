@@ -24,6 +24,11 @@ interface ApiService {
         @Body request: MobileLoginRequest
     ): Response<MobileLoginResponse>
 
+    @POST("api/mobile/change-password")
+    suspend fun changePassword(
+        @Body request: ChangePasswordRequest
+    ): Response<ChangePasswordResponse>
+
     @GET("api/workers/{worker_id}")
     suspend fun getWorkerProfile(
         @Path("worker_id") workerId: String

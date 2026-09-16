@@ -42,6 +42,7 @@ import androidx.cardview.widget.CardView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.geoalarm.network.ApiClient
+import com.example.geoalarm.network.ChangePasswordRequest
 import com.example.geoalarm.network.EventReporter
 import com.example.geoalarm.network.JobItem
 import com.example.geoalarm.network.SyncEngine
@@ -1377,16 +1378,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             }
         }
 
-        val btnRefreshProfile = findViewById<MaterialButton>(R.id.btnRefreshProfile)
-        btnRefreshProfile?.setOnClickListener {
-            btnRefreshProfile.isEnabled = false
-            btnRefreshProfile.text = "Syncing with Server..."
-            syncAndRefreshServerData(showUserFeedback = true) {
-                runOnUiThread {
-                    btnRefreshProfile.isEnabled = true
-                    btnRefreshProfile.text = "Sync & Refresh Server Data"
-                }
-            }
+        val btnChangePassword = findViewById<MaterialButton>(R.id.btnChangePassword)
+        btnChangePassword?.setOnClickListener {
+            showChangePasswordDialog()
         }
 
         val btnLogout = findViewById<MaterialButton>(R.id.btnLogout)
@@ -1409,6 +1403,109 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 .setNegativeButton("Cancel", null)
                 .show()
         }
+    }
+
+    private fun showChangePasswordDialog() {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_change_password, null)
+        val dialog = AlertDialog.Builder(this)
+            .setView(dialogView)
+            .setCancelable(true)
+            .create()
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+
+        val etCurrentPassword = dialogView.findViewById<EditText>(R.id.etCurrentPassword)
+        val etNewPassword = dialogView.findViewById<EditText>(R.id.etNewPassword)
+        val etConfirmPassword = dialogView.findViewById<EditText>(R.id.etConfirmPassword)
+        val tvError = dialogView.findViewById<TextView>(R.id.tvChangePasswordError)
+        val btnCancel = dialogView.findViewById<MaterialButton>(R.id.btnCancelChangePassword)
+        val btnSubmit = dialogView.findViewById<MaterialButton>(R.id.btnSubmitChangePassword)
+
+        btnCancel.setOnClickListener {
+            dialog.dismiss()
+        }
+
+        btnSubmit.setOnClickListener {
+            val currentPwd = etCurrentPassword.text.toString().trim()
+            val newPwd = etNewPassword.text.toString().trim()
+            val confirmPwd = etConfirmPassword.text.toString().trim()
+
+            tvError.visibility = View.GONE
+
+            if (currentPwd.isEmpty()) {
+                tvError.text = "Please enter your current password."
+                tvError.visibility = View.VISIBLE
+                etCurrentPassword.requestFocus()
+                return@setOnClickListener
+            }
+
+            if (newPwd.isEmpty()) {
+                tvError.text = "Please enter a new password."
+                tvError.visibility = View.VISIBLE
+                etNewPassword.requestFocus()
+                return@setOnClickListener
+            }
+
+            if (newPwd.length < 4) {
+                tvError.text = "New password must be at least 4 characters long."
+                tvError.visibility = View.VISIBLE
+                etNewPassword.requestFocus()
+                return@setOnClickListener
+            }
+
+            if (newPwd != confirmPwd) {
+                tvError.text = "New passwords do not match."
+                tvError.visibility = View.VISIBLE
+                etConfirmPassword.requestFocus()
+                return@setOnClickListener
+            }
+
+            btnSubmit.isEnabled = false
+            btnSubmit.text = "Updating..."
+
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    val req = ChangePasswordRequest(
+                        workerId = loggedInWorkerId,
+                        oldPassword = currentPwd,
+                        newPassword = newPwd
+                    )
+                    val response = ApiClient.apiService.changePassword(req)
+                    withContext(Dispatchers.Main) {
+                        btnSubmit.isEnabled = true
+                        btnSubmit.text = "Update Password"
+
+                        if (response.isSuccessful && response.body()?.success == true) {
+                            dialog.dismiss()
+                            Toast.makeText(this@MainActivity, "✓ Password changed successfully!", Toast.LENGTH_LONG).show()
+                            EventReporter.addLocalLog("Security: Password updated for $loggedInWorkerName")
+                        } else {
+                            var errMsg = "Failed to update password."
+                            try {
+                                val errBody = response.errorBody()?.string()
+                                if (!errBody.isNullOrEmpty()) {
+                                    val json = org.json.JSONObject(errBody)
+                                    if (json.has("message")) errMsg = json.getString("message")
+                                    else if (json.has("detail")) errMsg = json.getString("detail")
+                                }
+                            } catch (e: Exception) {
+                                errMsg = response.body()?.message ?: "Server error (${response.code()})"
+                            }
+                            tvError.text = errMsg
+                            tvError.visibility = View.VISIBLE
+                        }
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        btnSubmit.isEnabled = true
+                        btnSubmit.text = "Update Password"
+                        tvError.text = "Network error: ${e.message ?: "Could not reach server"}"
+                        tvError.visibility = View.VISIBLE
+                    }
+                }
+            }
+        }
+
+        dialog.show()
     }
 
     // ==========================================

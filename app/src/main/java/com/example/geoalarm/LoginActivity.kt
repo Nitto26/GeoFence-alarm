@@ -77,6 +77,12 @@ class LoginActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
+            if (password.isEmpty()) {
+                etPassword.error = "Please enter your password (default: password)"
+                etPassword.requestFocus()
+                return@setOnClickListener
+            }
+
             btnLogin.isEnabled = false
             btnLogin.text = "Authenticating..."
             tvConnectionStatus?.text = "Connecting to ${ApiClient.getBaseUrl()}..."
@@ -87,7 +93,7 @@ class LoginActivity : AppCompatActivity() {
                     
                     val loginRequest = MobileLoginRequest(
                         workerId = username,
-                        password = password.ifEmpty { null }
+                        password = password
                     )
                     
                     val response = ApiClient.apiService.login(loginRequest)
