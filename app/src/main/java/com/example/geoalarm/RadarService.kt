@@ -163,7 +163,7 @@ class RadarService : Service() {
             override fun onLocationResult(locationResult: LocationResult) {
                 val sharedPrefs = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
                 val isClockedIn = sharedPrefs.getBoolean("IS_CLOCKED_IN", false)
-                val currentJobId = sharedPrefs.getString("ACTIVE_JOB_ID", "JOB-1001") ?: "JOB-1001"
+                val currentJobId = sharedPrefs.getString("ACTIVE_JOB_ID", "") ?: ""
 
                 val jobs = loadCachedJobs()
                 val accommodation = loadCachedAccommodation()
@@ -208,8 +208,8 @@ class RadarService : Service() {
         val currentMinutes = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
 
         for (job in jobs) {
-            val startStr = job.startTime ?: "09:00"
-            val endStr = job.endTime ?: "18:00"
+            val startStr = job.startTime ?: ""
+            val endStr = job.endTime ?: ""
             try {
                 val startParts = startStr.split(":")
                 val endParts = endStr.split(":")

@@ -1160,8 +1160,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             }
 
             val timeText = TextView(this).apply {
-                val start = job.startTime ?: "09:00"
-                val end = job.endTime ?: "18:00"
+                val start = job.startTime ?: "Shift Start"
+                val end = job.endTime ?: "Shift End"
                 text = "Shift: $start - $end"
                 setTextColor(getColor(R.color.brand_blue))
                 textSize = 12f
@@ -1212,8 +1212,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         findViewById<View>(R.id.cardBottomWorksiteDetail)?.visibility = View.VISIBLE
         tvTitle?.text = job.jobTitle ?: job.jobId
-        val start = job.startTime ?: "09:00"
-        val end = job.endTime ?: "18:00"
+        val start = job.startTime ?: "Shift Start"
+        val end = job.endTime ?: "Shift End"
         val breakM = job.breakDurationMinutes ?: 60
         tvTime?.text = "Shift Hours: $start – $end (Break: ${breakM}m)"
         tvRole?.text = if (!job.address.isNullOrEmpty()) "Location: ${job.address}" else "Geofenced Worksite"
@@ -1484,8 +1484,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             cardLayout.addView(titleLayout)
 
             val timeText = TextView(this).apply {
-                val start = job.startTime ?: "09:00"
-                val end = job.endTime ?: "18:00"
+                val start = job.startTime ?: "Shift Start"
+                val end = job.endTime ?: "Shift End"
                 val breakM = job.breakDurationMinutes ?: 60
                 text = "Shift Hours: $start – $end (Break: ${breakM}m)"
                 setTextColor(getColor(R.color.text_secondary))

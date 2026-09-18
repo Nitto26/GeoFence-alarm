@@ -13,8 +13,8 @@ data class JobItem(
     @SerializedName("address") val address: String? = null,
     @SerializedName("location") val location: List<LocationCoordinate> = emptyList(),
     @SerializedName("days") val days: List<String> = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat"),
-    @SerializedName("start_time") val startTime: String? = "09:00",
-    @SerializedName("end_time") val endTime: String? = "18:00",
+    @SerializedName("start_time") val startTime: String? = null,
+    @SerializedName("end_time") val endTime: String? = null,
     @SerializedName("break_duration_minutes") val breakDurationMinutes: Int? = 60,
     @SerializedName("site_type") val siteType: String? = null,
     @SerializedName("is_starting_point") val isStartingPoint: Boolean? = false
