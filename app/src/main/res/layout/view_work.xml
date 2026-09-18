@@ -2,7 +2,6 @@
 <androidx.core.widget.NestedScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg_surface"
@@ -12,276 +11,55 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingHorizontal="20dp"
-        android:paddingTop="28dp"
-        android:paddingBottom="90dp">
+        android:padding="20dp"
+        android:paddingBottom="40dp">
 
-        <!-- Title -->
+        <!-- Screen Title -->
         <TextView
+            android:id="@+id/tvWorkScheduleTitle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Work / Schedule"
             android:textColor="@color/text_primary"
-            android:textSize="20sp"
+            android:textSize="22sp"
             android:textStyle="bold" />
 
-        <!-- Timeline Section (MOVED TO TOP) -->
+        <!-- Dynamic Shift Date Header -->
         <TextView
             android:id="@+id/tvTimelineDateHeader"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="22dp"
-            android:text="Schedule for Today"
+            android:layout_marginTop="16dp"
+            android:text="Assigned Schedule for Today"
             android:textColor="@color/text_primary"
-            android:textSize="16sp"
+            android:textSize="17sp"
             android:textStyle="bold" />
 
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
-            android:layout_marginTop="10dp"
+            android:layout_marginTop="12dp"
             android:background="@color/divider" />
 
-        <!-- Timeline Items Container -->
+        <!-- Dynamic Work Timeline Container (Populated strictly in Kotlin from server API) -->
         <LinearLayout
-            android:id="@+id/llTimelineContainer"
+            android:id="@+id/llWorkTimelineContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginTop="14dp">
-
-            <!-- Item 1: Construction Site A -->
-            <RelativeLayout
-                android:id="@+id/rlTimelineItem1"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="14dp">
-                <View
-                    android:id="@+id/node1"
-                    android:layout_width="10dp"
-                    android:layout_height="10dp"
-                    android:layout_marginTop="4dp"
-                    android:background="@drawable/bg_circle_today" />
-                <View
-                    android:layout_width="1.5dp"
-                    android:layout_height="90dp"
-                    android:layout_below="@id/node1"
-                    android:layout_alignStart="@id/node1"
-                    android:layout_marginStart="4dp"
-                    android:background="@color/divider" />
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_toEndOf="@id/node1"
-                    android:layout_marginStart="16dp"
-                    android:orientation="vertical">
-                    <RelativeLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content">
-                        <TextView
-                            android:id="@+id/tvWorkItemTitle1"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Construction Site A"
-                            android:textColor="@color/text_primary"
-                            android:textSize="15sp"
-                            android:textStyle="bold" />
-                        <TextView
-                            android:id="@+id/tvWorkItemBadge1"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_alignParentEnd="true"
-                            android:background="@drawable/bg_pill_blue"
-                            android:paddingHorizontal="10dp"
-                            android:paddingVertical="3dp"
-                            android:text="Upcoming"
-                            android:textColor="@color/badge_upcoming_text"
-                            android:textSize="11sp"
-                            android:textStyle="bold" />
-                    </RelativeLayout>
-                    <TextView
-                        android:id="@+id/tvWorkItemTime1"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="10:00 AM – 1:00 PM"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="13sp" />
-                    <TextView
-                        android:id="@+id/tvWorkItemRole1"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:text="Role: Electrical Installation"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
-                    <TextView
-                        android:id="@+id/tvWorkItemSupervisor1"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="Supervisor: Arun Kumar"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
-                </LinearLayout>
-            </RelativeLayout>
-
-            <!-- Item 2: Warehouse Renovation -->
-            <RelativeLayout
-                android:id="@+id/rlTimelineItem2"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="14dp">
-                <View
-                    android:id="@+id/node2"
-                    android:layout_width="10dp"
-                    android:layout_height="10dp"
-                    android:layout_marginTop="4dp"
-                    android:background="@drawable/bg_circle_today" />
-                <View
-                    android:layout_width="1.5dp"
-                    android:layout_height="90dp"
-                    android:layout_below="@id/node2"
-                    android:layout_alignStart="@id/node2"
-                    android:layout_marginStart="4dp"
-                    android:background="@color/divider" />
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_toEndOf="@id/node2"
-                    android:layout_marginStart="16dp"
-                    android:orientation="vertical">
-                    <RelativeLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content">
-                        <TextView
-                            android:id="@+id/tvWorkItemTitle2"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Warehouse Renovation"
-                            android:textColor="@color/text_primary"
-                            android:textSize="15sp"
-                            android:textStyle="bold" />
-                        <TextView
-                            android:id="@+id/tvWorkItemBadge2"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_alignParentEnd="true"
-                            android:background="@drawable/bg_pill_blue"
-                            android:paddingHorizontal="10dp"
-                            android:paddingVertical="3dp"
-                            android:text="Upcoming"
-                            android:textColor="@color/badge_upcoming_text"
-                            android:textSize="11sp"
-                            android:textStyle="bold" />
-                    </RelativeLayout>
-                    <TextView
-                        android:id="@+id/tvWorkItemTime2"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="2:00 PM – 5:00 PM"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="13sp" />
-                    <TextView
-                        android:id="@+id/tvWorkItemRole2"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:text="Role: Plumbing Work"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
-                    <TextView
-                        android:id="@+id/tvWorkItemSupervisor2"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="Supervisor: Irfan Ali"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
-                </LinearLayout>
-            </RelativeLayout>
-
-            <!-- Item 3: Site Office Work -->
-            <RelativeLayout
-                android:id="@+id/rlTimelineItem3"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content">
-                <View
-                    android:id="@+id/node3"
-                    android:layout_width="10dp"
-                    android:layout_height="10dp"
-                    android:layout_marginTop="4dp"
-                    android:background="@drawable/bg_circle_today" />
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_toEndOf="@id/node3"
-                    android:layout_marginStart="16dp"
-                    android:orientation="vertical">
-                    <RelativeLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content">
-                        <TextView
-                            android:id="@+id/tvWorkItemTitle3"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Site Office Work"
-                            android:textColor="@color/text_primary"
-                            android:textSize="15sp"
-                            android:textStyle="bold" />
-                        <TextView
-                            android:id="@+id/tvWorkItemBadge3"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_alignParentEnd="true"
-                            android:background="@drawable/bg_pill_blue"
-                            android:paddingHorizontal="10dp"
-                            android:paddingVertical="3dp"
-                            android:text="Upcoming"
-                            android:textColor="@color/badge_upcoming_text"
-                            android:textSize="11sp"
-                            android:textStyle="bold" />
-                    </RelativeLayout>
-                    <TextView
-                        android:id="@+id/tvWorkItemTime3"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="5:30 PM – 6:30 PM"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="13sp" />
-                    <TextView
-                        android:id="@+id/tvWorkItemRole3"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:text="Role: Documentation"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
-                    <TextView
-                        android:id="@+id/tvWorkItemSupervisor3"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="Supervisor: Suresh Babu"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
-                </LinearLayout>
-            </RelativeLayout>
-        </LinearLayout>
+            android:layout_marginTop="14dp"
+            android:orientation="vertical" />
 
         <View
             android:layout_width="match_parent"
             android:layout_height="1.5dp"
-            android:layout_marginTop="26dp"
+            android:layout_marginTop="20dp"
             android:background="@color/divider" />
 
-        <!-- Calendar Card (MOVED TO BOTTOM) -->
+        <!-- Calendar Card with Dynamic Month Navigation (Issue 16) -->
         <androidx.cardview.widget.CardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="22dp"
+            android:layout_marginTop="20dp"
             app:cardCornerRadius="18dp"
             app:cardElevation="0dp"
             app:strokeColor="@color/card_border"
@@ -294,18 +72,19 @@
                 android:orientation="vertical"
                 android:padding="18dp">
 
-                <!-- Month Header -->
+                <!-- Month Header with Working Chevron Navigation -->
                 <RelativeLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content">
                     <ImageView
                         android:id="@+id/ivPrevMonth"
-                        android:layout_width="28dp"
-                        android:layout_height="28dp"
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
                         android:layout_alignParentStart="true"
                         android:layout_centerVertical="true"
                         android:rotation="180"
-                        android:padding="4dp"
+                        android:padding="6dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
                         android:src="@drawable/ic_chevron_right"
                         app:tint="@color/text_primary" />
                     <TextView
@@ -313,22 +92,23 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_centerInParent="true"
-                        android:text="May 2026"
+                        android:text="September 2026"
                         android:textColor="@color/text_primary"
                         android:textSize="16sp"
                         android:textStyle="bold" />
                     <ImageView
                         android:id="@+id/ivNextMonth"
-                        android:layout_width="28dp"
-                        android:layout_height="28dp"
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
                         android:layout_alignParentEnd="true"
                         android:layout_centerVertical="true"
-                        android:padding="4dp"
+                        android:padding="6dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
                         android:src="@drawable/ic_chevron_right"
                         app:tint="@color/text_primary" />
                 </RelativeLayout>
 
-                <!-- Days of Week Header Row -->
+                <!-- Days of Week Header Row (Includes Saturday) -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -344,14 +124,13 @@
                     <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Sun" android:textColor="@color/text_secondary" android:textSize="12sp" android:gravity="center" />
                 </LinearLayout>
 
-                <!-- Calendar Grid Container (Days populated dynamically or setup inside MainActivity) -->
+                <!-- Calendar Grid Container -->
                 <GridLayout
                     android:id="@+id/glCalendarDays"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp"
-                    android:columnCount="7"
-                    android:rowCount="5" />
+                    android:columnCount="7" />
 
                 <!-- Calendar Legend -->
                 <LinearLayout
@@ -362,13 +141,13 @@
                     android:gravity="center"
                     android:orientation="horizontal">
                     <View android:layout_width="8dp" android:layout_height="8dp" android:background="@drawable/bg_circle_today" />
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="6dp" android:text="Work Day" android:textColor="@color/text_secondary" android:textSize="11sp" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="6dp" android:text="Today" android:textColor="@color/text_secondary" android:textSize="11sp" />
+
+                    <View android:layout_width="8dp" android:layout_height="8dp" android:layout_marginStart="14dp" android:background="@drawable/bg_circle_number" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="6dp" android:text="Work Shift" android:textColor="@color/text_secondary" android:textSize="11sp" />
 
                     <View android:layout_width="8dp" android:layout_height="8dp" android:layout_marginStart="14dp" android:background="@drawable/bg_circle_offday" />
                     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="6dp" android:text="Day Off" android:textColor="@color/text_secondary" android:textSize="11sp" />
-
-                    <View android:layout_width="8dp" android:layout_height="8dp" android:layout_marginStart="14dp" android:background="@drawable/bg_pill_green" />
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="6dp" android:text="Completed" android:textColor="@color/text_secondary" android:textSize="11sp" />
                 </LinearLayout>
 
             </LinearLayout>

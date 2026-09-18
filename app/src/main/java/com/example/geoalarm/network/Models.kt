@@ -10,8 +10,12 @@ data class LocationCoordinate(
 data class JobItem(
     @SerializedName("job_id") val jobId: String,
     @SerializedName("job_title") val jobTitle: String? = null,
-    @SerializedName("location") val location: List<LocationCoordinate>,
-    @SerializedName("days") val days: List<String> = emptyList(),
+    @SerializedName("address") val address: String? = null,
+    @SerializedName("location") val location: List<LocationCoordinate> = emptyList(),
+    @SerializedName("days") val days: List<String> = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat"),
+    @SerializedName("start_time") val startTime: String? = "09:00",
+    @SerializedName("end_time") val endTime: String? = "18:00",
+    @SerializedName("break_duration_minutes") val breakDurationMinutes: Int? = 60,
     @SerializedName("site_type") val siteType: String? = null,
     @SerializedName("is_starting_point") val isStartingPoint: Boolean? = false
 )
@@ -58,12 +62,15 @@ data class WorkerProfile(
     @SerializedName("email") val email: String? = null,
     @SerializedName("grade") val grade: String? = null,
     @SerializedName("worker_type") val workerType: String? = null,
+    @SerializedName("active_device_id") val activeDeviceId: String? = null,
     @SerializedName("is_active") val isActive: Boolean? = true
 )
 
 data class MobileLoginRequest(
     @SerializedName("worker_id") val workerId: String,
-    @SerializedName("password") val password: String? = null
+    @SerializedName("password") val password: String? = null,
+    @SerializedName("device_id") val deviceId: String? = null,
+    @SerializedName("device_name") val deviceName: String? = null
 )
 
 data class MobileLoginResponse(
@@ -86,4 +93,3 @@ data class ChangePasswordResponse(
     @SerializedName("message") val message: String? = null,
     @SerializedName("transaction_id") val transactionId: String? = null
 )
-

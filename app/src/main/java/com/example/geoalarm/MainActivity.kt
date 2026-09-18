@@ -38,6 +38,8 @@ import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.cardview.widget.CardView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -86,6 +88,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private lateinit var viewFlipper: ViewFlipper
     private var mMap: GoogleMap? = null
     private var isMapReady = false
+    // Dynamic Calendar State (Issue 16)
+    private var currentCalendarMonth: Calendar = Calendar.getInstance()
+
 
     // Bottom Nav Tabs
     private lateinit var tabHome: LinearLayout
@@ -277,6 +282,19 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         updateWorkerProfileViews()
 
         // Initialize UI Tabs and Navigation
+        // Apply WindowInsets padding to bottom navigation bar to prevent overlap with Android system navigation buttons (Issue 5)
+        val bottomNav = findViewById<View>(R.id.bottomNavContainer)
+        if (bottomNav != null) {
+            ViewCompat.setOnApplyWindowInsetsListener(bottomNav) { view, insets ->
+                val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+                view.setPadding(0, 0, 0, systemBars.bottom)
+                val baseHeight = (resources.displayMetrics.density * 64).toInt()
+                view.layoutParams.height = baseHeight + systemBars.bottom
+                view.requestLayout()
+                insets
+            }
+        }
+
         setupBottomNavigation()
         setupHomeInteractions()
         setupProfileInteractions()
@@ -1276,34 +1294,64 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     // SCREEN 4: WORK / SCHEDULE & CALENDAR
     // ==========================================
     private fun setupWorkCalendar() {
-        val ivPrevMonth = findViewById<ImageView>(R.id.ivPrevMonth)
-        val ivNextMonth = findViewById<ImageView>(R.id.ivNextMonth)
+        val ivPrev = findViewById<ImageView>(R.id.ivPrevMonth)
+        val ivNext = findViewById<ImageView>(R.id.ivNextMonth)
 
-        ivPrevMonth?.setOnClickListener {
-            Toast.makeText(this, "April 2026", Toast.LENGTH_SHORT).show()
+        ivPrev?.setOnClickListener {
+            currentCalendarMonth.add(Calendar.MONTH, -1)
+            updateWorkCalendarWithJobs(liveJobs)
         }
-        ivNextMonth?.setOnClickListener {
-            Toast.makeText(this, "June 2026", Toast.LENGTH_SHORT).show()
+
+        ivNext?.setOnClickListener {
+            currentCalendarMonth.add(Calendar.MONTH, 1)
+            updateWorkCalendarWithJobs(liveJobs)
         }
     }
 
     private fun updateWorkCalendarWithJobs(jobs: List<JobItem>) {
+        val tvMonthTitle = findViewById<TextView>(R.id.tvCalendarMonthTitle)
+        val monthFormat = SimpleDateFormat("MMMM yyyy", Locale.getDefault())
+        tvMonthTitle?.text = monthFormat.format(currentCalendarMonth.time)
+
         val grid = findViewById<GridLayout>(R.id.glCalendarDays) ?: return
         grid.removeAllViews()
 
-        // Days Off list (Sundays and mock off days)
-        val offDays = setOf(3, 10, 17, 24, 31, 7, 14)
-        // Work Days list
-        val workDays = setOf(1, 2, 5, 8, 12, 15, 18, 20, 22, 25, 29)
-
-        val cal = Calendar.getInstance()
+        val cal = currentCalendarMonth.clone() as Calendar
+        cal.set(Calendar.DAY_OF_MONTH, 1)
+        val firstDayOfWeek = cal.get(Calendar.DAY_OF_WEEK) // 1=Sunday, 2=Monday, ...
+        // Convert to Monday=0, Tuesday=1, ..., Sunday=6
+        val offset = (firstDayOfWeek + 5) % 7
         val daysInMonth = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
 
+        // Add empty cells for initial weekday offset
+        for (i in 0 until offset) {
+            val emptyCell = View(this).apply {
+                layoutParams = GridLayout.LayoutParams().apply {
+                    width = 0
+                    height = 100
+                    columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
+                }
+            }
+            grid.addView(emptyCell)
+        }
+
+        val todayCal = Calendar.getInstance()
+        val isCurrentMonth = todayCal.get(Calendar.YEAR) == currentCalendarMonth.get(Calendar.YEAR) &&
+                             todayCal.get(Calendar.MONTH) == currentCalendarMonth.get(Calendar.MONTH)
+        val todayDay = if (isCurrentMonth) todayCal.get(Calendar.DAY_OF_MONTH) else -1
+
+        val workJobs = jobs.filter { it.siteType != "accommodation" && it.isStartingPoint != true }
+
         for (day in 1..daysInMonth) {
+            val cellCal = currentCalendarMonth.clone() as Calendar
+            cellCal.set(Calendar.DAY_OF_MONTH, day)
+            val dayOfWeek = cellCal.get(Calendar.DAY_OF_WEEK) // 1=Sunday, 7=Saturday
+            val isSunday = dayOfWeek == Calendar.SUNDAY
+
             val frameLayout = FrameLayout(this).apply {
                 layoutParams = GridLayout.LayoutParams().apply {
                     width = 0
-                    height = 110
+                    height = 100
                     columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
                 }
             }
@@ -1312,19 +1360,18 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 text = day.toString()
                 textSize = 13f
                 gravity = Gravity.CENTER
-                layoutParams = FrameLayout.LayoutParams(96, 96).apply {
+                layoutParams = FrameLayout.LayoutParams(88, 88).apply {
                     gravity = Gravity.CENTER
                 }
                 setTypeface(null, Typeface.BOLD)
 
-                // Color code dates: Workday (Blue), Off Day (Soft Red), Today (Dark Blue Circle)
-                if (day == 20) {
+                if (day == todayDay) {
                     background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_circle_today)
                     setTextColor(Color.WHITE)
-                } else if (workDays.contains(day)) {
+                } else if (!isSunday && workJobs.isNotEmpty()) {
                     background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_circle_number)
                     setTextColor(getColor(R.color.brand_blue))
-                } else if (offDays.contains(day)) {
+                } else if (isSunday) {
                     background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_circle_offday)
                     setTextColor(Color.parseColor("#EF4444"))
                 } else {
@@ -1333,38 +1380,125 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             }
 
             frameLayout.addView(dayText)
-
-            // Click listener selects day and updates schedule timeline above dynamically!
             frameLayout.setOnClickListener {
-                selectCalendarDate(day, workDays.contains(day), offDays.contains(day))
+                selectCalendarDate(day, !isSunday && workJobs.isNotEmpty(), isSunday)
+            }
+            grid.addView(frameLayout)
+        }
+
+        // Render dynamic schedule list in Work screen
+        renderDynamicWorkScheduleList(workJobs)
+    }
+
+    private fun renderDynamicWorkScheduleList(workJobs: List<JobItem>) {
+        val container = findViewById<LinearLayout>(R.id.llWorkTimelineContainer) ?: return
+        container.removeAllViews()
+
+        if (workJobs.isEmpty()) {
+            val emptyView = TextView(this).apply {
+                text = "No shifts scheduled for today.\nYou are currently on standby."
+                setTextColor(getColor(R.color.text_secondary))
+                textSize = 13f
+                setPadding(16, 24, 16, 24)
+                gravity = Gravity.CENTER
+            }
+            container.addView(emptyView)
+            return
+        }
+
+        workJobs.forEach { job ->
+            val card = CardView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    setMargins(0, 0, 0, 16)
+                }
+                radius = 16f
+                cardElevation = 0f
+                setCardBackgroundColor(getColor(R.color.card_bg))
+                setContentPadding(18, 16, 18, 16)
             }
 
-            grid.addView(frameLayout)
+            val cardLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+            }
+
+            val titleLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+
+            val dot = View(this).apply {
+                layoutParams = LinearLayout.LayoutParams(16, 16).apply {
+                    setMargins(0, 0, 12, 0)
+                }
+                background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_circle_today)
+            }
+
+            val title = TextView(this).apply {
+                text = job.jobTitle ?: job.jobId
+                setTextColor(getColor(R.color.text_primary))
+                textSize = 15f
+                setTypeface(null, Typeface.BOLD)
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            }
+
+            val badge = TextView(this).apply {
+                text = "Scheduled"
+                setTextColor(getColor(R.color.brand_blue))
+                textSize = 11f
+                setTypeface(null, Typeface.BOLD)
+                background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_pill_blue)
+                setPadding(16, 6, 16, 6)
+            }
+
+            titleLayout.addView(dot)
+            titleLayout.addView(title)
+            titleLayout.addView(badge)
+            cardLayout.addView(titleLayout)
+
+            val timeText = TextView(this).apply {
+                val start = job.startTime ?: "09:00"
+                val end = job.endTime ?: "18:00"
+                val breakM = job.breakDurationMinutes ?: 60
+                text = "Shift Hours: $start – $end (Break: ${breakM}m)"
+                setTextColor(getColor(R.color.text_secondary))
+                textSize = 12f
+                setPadding(28, 6, 0, 0)
+            }
+            cardLayout.addView(timeText)
+
+            if (!job.address.isNullOrEmpty()) {
+                val addrText = TextView(this).apply {
+                    text = "Location: ${job.address}"
+                    setTextColor(getColor(R.color.text_secondary))
+                    textSize = 12f
+                    setPadding(28, 2, 0, 0)
+                }
+                cardLayout.addView(addrText)
+            }
+
+            card.addView(cardLayout)
+            container.addView(card)
         }
     }
 
     private fun selectCalendarDate(day: Int, isWorkday: Boolean, isOffDay: Boolean) {
         val tvHeader = findViewById<TextView>(R.id.tvTimelineDateHeader)
-        tvHeader?.text = "Schedule for May $day, 2026"
+        val monthName = SimpleDateFormat("MMMM", Locale.getDefault()).format(currentCalendarMonth.time)
+        val year = currentCalendarMonth.get(Calendar.YEAR)
+        tvHeader?.text = "Schedule for $monthName $day, $year"
 
-        val item1 = findViewById<RelativeLayout>(R.id.rlTimelineItem1)
-        val item2 = findViewById<RelativeLayout>(R.id.rlTimelineItem2)
-        val item3 = findViewById<RelativeLayout>(R.id.rlTimelineItem3)
-
+        val workJobs = liveJobs.filter { it.siteType != "accommodation" && it.isStartingPoint != true }
         if (isOffDay) {
-            item1?.visibility = View.GONE
-            item2?.visibility = View.GONE
-            item3?.visibility = View.GONE
+            renderDynamicWorkScheduleList(emptyList())
             Toast.makeText(this, "Day Off: No worksites assigned.", Toast.LENGTH_SHORT).show()
         } else if (isWorkday) {
-            item1?.visibility = View.VISIBLE
-            item2?.visibility = View.VISIBLE
-            item3?.visibility = View.VISIBLE
-            Toast.makeText(this, "Workday: 3 worksites active.", Toast.LENGTH_SHORT).show()
+            renderDynamicWorkScheduleList(workJobs)
+            Toast.makeText(this, "Workday: ${workJobs.size} worksite(s) active.", Toast.LENGTH_SHORT).show()
         } else {
-            item1?.visibility = View.VISIBLE
-            item2?.visibility = View.GONE
-            item3?.visibility = View.GONE
+            renderDynamicWorkScheduleList(workJobs)
         }
     }
 

@@ -91,9 +91,17 @@ class LoginActivity : AppCompatActivity() {
                 try {
                     Log.d(TAG, "Authenticating worker: $username against ${ApiClient.getBaseUrl()}")
                     
+                    val androidId = android.provider.Settings.Secure.getString(
+                        contentResolver,
+                        android.provider.Settings.Secure.ANDROID_ID
+                    ) ?: "dev_${username}"
+                    val devName = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+
                     val loginRequest = MobileLoginRequest(
                         workerId = username,
-                        password = password
+                        password = password,
+                        deviceId = androidId,
+                        deviceName = devName
                     )
                     
                     val response = ApiClient.apiService.login(loginRequest)

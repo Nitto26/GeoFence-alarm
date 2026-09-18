@@ -201,6 +201,31 @@ class RadarService : Service() {
         }
     }
 
+
+    private fun isWithinShiftHours(jobs: List<JobItem>): Boolean {
+        if (jobs.isEmpty()) return true
+        val cal = java.util.Calendar.getInstance()
+        val currentMinutes = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
+
+        for (job in jobs) {
+            val startStr = job.startTime ?: "09:00"
+            val endStr = job.endTime ?: "18:00"
+            try {
+                val startParts = startStr.split(":")
+                val endParts = endStr.split(":")
+                val startMins = startParts[0].toInt() * 60 + startParts[1].toInt()
+                val endMins = endParts[0].toInt() * 60 + endParts[1].toInt()
+
+                if (currentMinutes in startMins..endMins) {
+                    return true
+                }
+            } catch (_: Exception) {
+                return true
+            }
+        }
+        return false
+    }
+
     private fun processLocationAgainstJobsAndStay(
         lat: Double, 
         lng: Double, 
