@@ -1121,6 +1121,19 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val container = findViewById<LinearLayout>(R.id.llCarouselContainer) ?: return
         container.removeAllViews()
 
+        val bottomCard = findViewById<View>(R.id.cardBottomWorksiteDetail)
+        val carouselScroll = findViewById<View>(R.id.hsvWorksitesCarousel)
+
+        if (jobs.isEmpty()) {
+            bottomCard?.visibility = View.GONE
+            carouselScroll?.visibility = View.GONE
+            return
+        }
+
+        bottomCard?.visibility = View.VISIBLE
+        carouselScroll?.visibility = View.VISIBLE
+        updateBottomCardDetails(jobs.first())
+
         jobs.forEachIndexed { index, job ->
             val cardView = CardView(this).apply {
                 layoutParams = LinearLayout.LayoutParams(
@@ -1140,21 +1153,24 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             }
 
             val titleText = TextView(this).apply {
-                text = job.jobId
+                text = job.jobTitle ?: job.jobId
                 setTextColor(getColor(R.color.text_primary))
                 textSize = 14f
                 setTypeface(null, Typeface.BOLD)
             }
 
             val timeText = TextView(this).apply {
-                text = "Time: 10:00 AM - 01:00 PM"
+                val start = job.startTime ?: "09:00"
+                val end = job.endTime ?: "18:00"
+                text = "Shift: $start - $end"
                 setTextColor(getColor(R.color.brand_blue))
                 textSize = 12f
                 setTypeface(null, Typeface.BOLD)
             }
 
             val durationText = TextView(this).apply {
-                text = "Duration: 3 hours"
+                val breakM = job.breakDurationMinutes ?: 60
+                text = "Break: ${breakM}m"
                 setTextColor(getColor(R.color.text_secondary))
                 textSize = 11f
             }
@@ -1183,16 +1199,25 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
     }
 
-    private fun updateBottomCardDetails(job: JobItem) {
+    private fun updateBottomCardDetails(job: JobItem?) {
         val tvTitle = findViewById<TextView>(R.id.tvMapDetailTitle)
         val tvTime = findViewById<TextView>(R.id.tvMapDetailTime)
         val tvRole = findViewById<TextView>(R.id.tvMapDetailRole)
         val tvSupervisor = findViewById<TextView>(R.id.tvMapDetailSupervisor)
 
-        tvTitle?.text = job.jobId
-        tvTime?.text = "Active Days: " + job.days.joinToString(", ")
-        tvRole?.text = "Role: Electrical Installation"
-        tvSupervisor?.text = "Supervisor: Arun Kumar"
+        if (job == null) {
+            findViewById<View>(R.id.cardBottomWorksiteDetail)?.visibility = View.GONE
+            return
+        }
+
+        findViewById<View>(R.id.cardBottomWorksiteDetail)?.visibility = View.VISIBLE
+        tvTitle?.text = job.jobTitle ?: job.jobId
+        val start = job.startTime ?: "09:00"
+        val end = job.endTime ?: "18:00"
+        val breakM = job.breakDurationMinutes ?: 60
+        tvTime?.text = "Shift Hours: $start – $end (Break: ${breakM}m)"
+        tvRole?.text = if (!job.address.isNullOrEmpty()) "Location: ${job.address}" else "Geofenced Worksite"
+        tvSupervisor?.text = "Status: Assigned Shift Active"
     }
 
     private fun setupMapDetailsCard() {
