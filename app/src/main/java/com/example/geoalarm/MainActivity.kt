@@ -489,6 +489,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val tvProfileTallyNo = findViewById<TextView>(R.id.tvProfileTallyNo)
         val tvProfileDepartment = findViewById<TextView>(R.id.tvProfileDepartment)
         val tvProfilePhone = findViewById<TextView>(R.id.tvProfilePhone)
+        val tvProfileAccommodation = findViewById<TextView>(R.id.tvProfileAccommodation)
+        val tvProfileCompany = findViewById<TextView>(R.id.tvProfileCompany)
 
         tvHomeUserName?.text = loggedInWorkerName
         val displayTally = if (loggedInWorkerTallyNo.isNotEmpty()) loggedInWorkerTallyNo else loggedInWorkerId
@@ -500,6 +502,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         if (loggedInWorkerPhone.isNotEmpty()) {
             tvProfilePhone?.text = loggedInWorkerPhone
         }
+
+        if (liveAccommodation != null) {
+            tvProfileAccommodation?.text = liveAccommodation?.name ?: "Assigned Stay Accommodation"
+        } else {
+            tvProfileAccommodation?.text = "No Stay Accommodation Assigned"
+        }
+
+        val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+        val companyName = userPrefs.getString("COMPANY_NAME", "SGS Field Tracker") ?: "SGS Field Tracker"
+        tvProfileCompany?.text = companyName
     }
 
     private fun updateHomeUiWithLiveJobs(jobs: List<JobItem>) {
@@ -1534,14 +1546,14 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val btnProfileAccommodationRow = findViewById<LinearLayout>(R.id.btnProfileAccommodationRow)
         
         btnProfileAccommodationRow?.setOnClickListener {
-            // Navigate to Map tab (Tab Index 1)
-            switchTab(1)
-
-            // Focus on accommodation LatLng
-            assignedStayCenter?.let { mMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(it, 16f)) }
-            accommodationMarker?.showInfoWindow()
-
-            Toast.makeText(this, "Accommodation focused: Block A, Room 203", Toast.LENGTH_LONG).show()
+            if (liveAccommodation != null && assignedStayCenter != null) {
+                switchTab(1)
+                assignedStayCenter?.let { mMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(it, 16f)) }
+                accommodationMarker?.showInfoWindow()
+                Toast.makeText(this, "Accommodation: ${liveAccommodation?.name}", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "No stay accommodation currently assigned to your profile.", Toast.LENGTH_SHORT).show()
+            }
         }
 
         // Secret 3-Tap Version Listener for Offline Local Storage & Sync Audit
