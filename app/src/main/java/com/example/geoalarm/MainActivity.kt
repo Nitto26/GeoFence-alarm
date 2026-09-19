@@ -1896,27 +1896,31 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 if (wasInsideStay) {
                     sharedPrefs.edit().putBoolean("WAS_INSIDE_STAY", false).apply()
                     if (!isClockedIn) {
-                        val now = System.currentTimeMillis()
-                        val primaryJobId = liveJobs.firstOrNull()?.jobId ?: loggedInWorkerId
-                        sharedPrefs.edit()
-                            .putBoolean("IS_CLOCKED_IN", true)
-                            .putBoolean("IS_SYSTEM_ARMED", true)
-                            .putLong("CLOCK_IN_TIMESTAMP", now)
-                            .putString("ACTIVE_JOB_ID", primaryJobId)
-                            .apply()
+                        if (ShiftScheduleHelper.isAnyJobWithinShiftHours(liveJobs)) {
+                            val now = System.currentTimeMillis()
+                            val primaryJobId = liveJobs.firstOrNull()?.jobId ?: loggedInWorkerId
+                            sharedPrefs.edit()
+                                .putBoolean("IS_CLOCKED_IN", true)
+                                .putBoolean("IS_SYSTEM_ARMED", true)
+                                .putLong("CLOCK_IN_TIMESTAMP", now)
+                                .putString("ACTIVE_JOB_ID", primaryJobId)
+                                .apply()
 
-                        startTimeMillis = now
-                        updateClockInOutUi(true)
-                        WorkNotificationManager.showClockInNotification(this, primaryJobId, isAuto = true)
-                        EventReporter.reportEvent(
-                            context = this,
-                            eventType = "clock_in",
-                            jobId = primaryJobId,
-                            latitude = lat,
-                            longitude = lng
-                        )
-                        EventReporter.addLocalLog("Shift Started: Exited stay accommodation. Payroll tracking active.")
-                        startRadarServiceSafely()
+                            startTimeMillis = now
+                            updateClockInOutUi(true)
+                            WorkNotificationManager.showClockInNotification(this, primaryJobId, isAuto = true)
+                            EventReporter.reportEvent(
+                                context = this,
+                                eventType = "clock_in",
+                                jobId = primaryJobId,
+                                latitude = lat,
+                                longitude = lng
+                            )
+                            EventReporter.addLocalLog("Shift Started: Exited stay accommodation. Payroll tracking active.")
+                            startRadarServiceSafely()
+                        } else {
+                            Log.d(TAG, "Stay departure detected, but outside scheduled shift hours. Clock-in skipped.")
+                        }
                     }
                 }
             }
@@ -1937,36 +1941,40 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 lastInsideJobId = jobId
 
                 if (!isClockedIn) {
-                    val now = System.currentTimeMillis()
-                    sharedPrefs.edit()
-                        .putBoolean("IS_CLOCKED_IN", true)
-                        .putBoolean("IS_SYSTEM_ARMED", true)
-                        .putLong("CLOCK_IN_TIMESTAMP", now)
-                        .putString("ACTIVE_JOB_ID", jobId)
-                        .apply()
+                    if (ShiftScheduleHelper.isJobWithinShiftHours(matchedJob)) {
+                        val now = System.currentTimeMillis()
+                        sharedPrefs.edit()
+                            .putBoolean("IS_CLOCKED_IN", true)
+                            .putBoolean("IS_SYSTEM_ARMED", true)
+                            .putLong("CLOCK_IN_TIMESTAMP", now)
+                            .putString("ACTIVE_JOB_ID", jobId)
+                            .apply()
 
-                    startTimeMillis = now
-                    updateClockInOutUi(true)
+                        startTimeMillis = now
+                        updateClockInOutUi(true)
 
-                    WorkNotificationManager.showClockInNotification(this, jobId, isAuto = true)
+                        WorkNotificationManager.showClockInNotification(this, jobId, isAuto = true)
 
-                    EventReporter.reportEvent(
-                        context = this,
-                        eventType = "clock_in",
-                        jobId = jobId,
-                        latitude = lat,
-                        longitude = lng
-                    )
-                    EventReporter.reportEvent(
-                        context = this,
-                        eventType = "entry",
-                        jobId = jobId,
-                        latitude = lat,
-                        longitude = lng
-                    )
-                    EventReporter.addLocalLog("✓ Work time auto-started at $jobId. Payroll active.")
+                        EventReporter.reportEvent(
+                            context = this,
+                            eventType = "clock_in",
+                            jobId = jobId,
+                            latitude = lat,
+                            longitude = lng
+                        )
+                        EventReporter.reportEvent(
+                            context = this,
+                            eventType = "entry",
+                            jobId = jobId,
+                            latitude = lat,
+                            longitude = lng
+                        )
+                        EventReporter.addLocalLog("✓ Work time auto-started at $jobId. Payroll active.")
 
-                    startRadarServiceSafely()
+                        startRadarServiceSafely()
+                    } else {
+                        Log.d(TAG, "Worksite arrival inside $jobId detected, but outside scheduled shift hours/date. Clock-in skipped.")
+                    }
                 } else {
                     // Already clocked in, entering this worksite perimeter
                     WorkNotificationManager.showGeofenceEntryNotification(this, jobId)

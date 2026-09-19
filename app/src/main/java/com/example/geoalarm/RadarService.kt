@@ -202,30 +202,6 @@ class RadarService : Service() {
     }
 
 
-    private fun isWithinShiftHours(jobs: List<JobItem>): Boolean {
-        if (jobs.isEmpty()) return true
-        val cal = java.util.Calendar.getInstance()
-        val currentMinutes = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
-
-        for (job in jobs) {
-            val startStr = job.startTime ?: ""
-            val endStr = job.endTime ?: ""
-            try {
-                val startParts = startStr.split(":")
-                val endParts = endStr.split(":")
-                val startMins = startParts[0].toInt() * 60 + startParts[1].toInt()
-                val endMins = endParts[0].toInt() * 60 + endParts[1].toInt()
-
-                if (currentMinutes in startMins..endMins) {
-                    return true
-                }
-            } catch (_: Exception) {
-                return true
-            }
-        }
-        return false
-    }
-
     private fun processLocationAgainstJobsAndStay(
         lat: Double, 
         lng: Double, 
@@ -251,38 +227,42 @@ class RadarService : Service() {
             } else {
                 // Outside stay
                 if (wasInsideStay) {
-                    // DEPARTED STAY / ACCOMMODATION -> AUTO CLOCK IN ONCE!
+                    // DEPARTED STAY / ACCOMMODATION -> AUTO CLOCK IN ONLY IF WITHIN SHIFT SCHEDULE!
                     sharedPrefs.edit().putBoolean("WAS_INSIDE_STAY", false).apply()
 
                     if (!isClockedIn) {
-                        val now = System.currentTimeMillis()
-                        val primaryJobId = jobs.firstOrNull()?.jobId ?: "Assigned Worksite"
-                        sharedPrefs.edit()
-                            .putBoolean("IS_CLOCKED_IN", true)
-                            .putBoolean("IS_SYSTEM_ARMED", true)
-                            .putLong("CLOCK_IN_TIMESTAMP", now)
-                            .putString("ACTIVE_JOB_ID", primaryJobId)
-                            .commit()
+                        if (ShiftScheduleHelper.isAnyJobWithinShiftHours(jobs)) {
+                            val now = System.currentTimeMillis()
+                            val primaryJobId = jobs.firstOrNull()?.jobId ?: "Assigned Worksite"
+                            sharedPrefs.edit()
+                                .putBoolean("IS_CLOCKED_IN", true)
+                                .putBoolean("IS_SYSTEM_ARMED", true)
+                                .putLong("CLOCK_IN_TIMESTAMP", now)
+                                .putString("ACTIVE_JOB_ID", primaryJobId)
+                                .commit()
 
-                        updateForegroundNotification()
-                        WorkNotificationManager.showClockInNotification(this, primaryJobId, isAuto = true)
+                            updateForegroundNotification()
+                            WorkNotificationManager.showClockInNotification(this, primaryJobId, isAuto = true)
 
-                        EventReporter.reportEvent(
-                            context = this,
-                            eventType = "clock_in",
-                            jobId = primaryJobId,
-                            latitude = lat,
-                            longitude = lng
-                        )
-                        EventReporter.addLocalLog("Shift Auto-Started: Exited accommodation. Payroll timer active.")
+                            EventReporter.reportEvent(
+                                context = this,
+                                eventType = "clock_in",
+                                jobId = primaryJobId,
+                                latitude = lat,
+                                longitude = lng
+                            )
+                            EventReporter.addLocalLog("Shift Auto-Started: Exited accommodation. Payroll timer active.")
 
-                        val stateIntent = Intent(GeofenceBroadcastReceiver.ACTION_WORK_STATE_CHANGED).apply {
-                            putExtra("IS_CLOCKED_IN", true)
-                            putExtra("CLOCK_IN_TIMESTAMP", now)
-                            putExtra("ACTIVE_JOB_ID", primaryJobId)
-                            setPackage(packageName)
+                            val stateIntent = Intent(GeofenceBroadcastReceiver.ACTION_WORK_STATE_CHANGED).apply {
+                                putExtra("IS_CLOCKED_IN", true)
+                                putExtra("CLOCK_IN_TIMESTAMP", now)
+                                putExtra("ACTIVE_JOB_ID", primaryJobId)
+                                setPackage(packageName)
+                            }
+                            sendBroadcast(stateIntent)
+                        } else {
+                            Log.d(TAG, "Stay departure detected, but current time is outside shift schedule. Auto clock-in skipped.")
                         }
-                        sendBroadcast(stateIntent)
                     }
                 }
             }
@@ -304,41 +284,45 @@ class RadarService : Service() {
                 lastInsideJobId = jobId
 
                 if (!isClockedIn) {
-                    // Auto Clock In upon arrival at worksite
-                    val now = System.currentTimeMillis()
-                    sharedPrefs.edit()
-                        .putBoolean("IS_CLOCKED_IN", true)
-                        .putBoolean("IS_SYSTEM_ARMED", true)
-                        .putLong("CLOCK_IN_TIMESTAMP", now)
-                        .putString("ACTIVE_JOB_ID", jobId)
-                        .commit()
+                    // Auto Clock In upon arrival at worksite ONLY if current time & date is within shift hours
+                    if (ShiftScheduleHelper.isJobWithinShiftHours(matchedJob)) {
+                        val now = System.currentTimeMillis()
+                        sharedPrefs.edit()
+                            .putBoolean("IS_CLOCKED_IN", true)
+                            .putBoolean("IS_SYSTEM_ARMED", true)
+                            .putLong("CLOCK_IN_TIMESTAMP", now)
+                            .putString("ACTIVE_JOB_ID", jobId)
+                            .commit()
 
-                    updateForegroundNotification()
-                    WorkNotificationManager.showClockInNotification(this, jobId, isAuto = true)
+                        updateForegroundNotification()
+                        WorkNotificationManager.showClockInNotification(this, jobId, isAuto = true)
 
-                    EventReporter.reportEvent(
-                        context = this,
-                        eventType = "clock_in",
-                        jobId = jobId,
-                        latitude = lat,
-                        longitude = lng
-                    )
-                    EventReporter.reportEvent(
-                        context = this,
-                        eventType = "entry",
-                        jobId = jobId,
-                        latitude = lat,
-                        longitude = lng
-                    )
-                    EventReporter.addLocalLog("Background Arrival: Work time started at $jobId.")
+                        EventReporter.reportEvent(
+                            context = this,
+                            eventType = "clock_in",
+                            jobId = jobId,
+                            latitude = lat,
+                            longitude = lng
+                        )
+                        EventReporter.reportEvent(
+                            context = this,
+                            eventType = "entry",
+                            jobId = jobId,
+                            latitude = lat,
+                            longitude = lng
+                        )
+                        EventReporter.addLocalLog("Background Arrival: Work time started at $jobId.")
 
-                    val stateIntent = Intent(GeofenceBroadcastReceiver.ACTION_WORK_STATE_CHANGED).apply {
-                        putExtra("IS_CLOCKED_IN", true)
-                        putExtra("CLOCK_IN_TIMESTAMP", now)
-                        putExtra("ACTIVE_JOB_ID", jobId)
-                        setPackage(packageName)
+                        val stateIntent = Intent(GeofenceBroadcastReceiver.ACTION_WORK_STATE_CHANGED).apply {
+                            putExtra("IS_CLOCKED_IN", true)
+                            putExtra("CLOCK_IN_TIMESTAMP", now)
+                            putExtra("ACTIVE_JOB_ID", jobId)
+                            setPackage(packageName)
+                        }
+                        sendBroadcast(stateIntent)
+                    } else {
+                        Log.d(TAG, "Worksite arrival detected at $jobId, but outside shift schedule. Auto clock-in skipped.")
                     }
-                    sendBroadcast(stateIntent)
                 } else {
                     // Already clocked in, newly crossed into this worksite
                     WorkNotificationManager.showGeofenceEntryNotification(this, jobId)

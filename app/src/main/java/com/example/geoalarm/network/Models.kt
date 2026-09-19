@@ -17,7 +17,10 @@ data class JobItem(
     @SerializedName("end_time") val endTime: String? = null,
     @SerializedName("break_duration_minutes") val breakDurationMinutes: Int? = 60,
     @SerializedName("site_type") val siteType: String? = null,
-    @SerializedName("is_starting_point") val isStartingPoint: Boolean? = false
+    @SerializedName("is_starting_point") val isStartingPoint: Boolean? = false,
+    @SerializedName("schedule_period") val schedulePeriod: String? = null,
+    @SerializedName("scheduled_date") val scheduledDate: String? = null,
+    @SerializedName("date") val date: String? = null
 )
 
 data class AccommodationItem(

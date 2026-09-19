@@ -67,6 +67,14 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
         val sharedPrefs = context.getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
         val isAlreadyClockedIn = sharedPrefs.getBoolean("IS_CLOCKED_IN", false)
 
+        val cachedJobsJson = geoPrefs.getString("CACHED_JOBS_JSON", null)
+        val cachedJobs: List<com.example.geoalarm.network.JobItem> = if (cachedJobsJson != null) {
+            try {
+                val type = object : com.google.gson.reflect.TypeToken<List<com.example.geoalarm.network.JobItem>>() {}.type
+                com.google.gson.Gson().fromJson(cachedJobsJson, type) ?: emptyList()
+            } catch (_: Exception) { emptyList() }
+        } else emptyList()
+
         for (geofence in triggeringGeofences) {
             val jobId = geofence.requestId
 
@@ -76,6 +84,20 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                 val now = System.currentTimeMillis()
 
                 if (!isAlreadyClockedIn) {
+                    val matchedJob = cachedJobs.find { it.jobId == jobId }
+                    val isWithinSchedule = if (matchedJob != null) {
+                        ShiftScheduleHelper.isJobWithinShiftHours(matchedJob)
+                    } else if (cachedJobs.isNotEmpty()) {
+                        ShiftScheduleHelper.isAnyJobWithinShiftHours(cachedJobs)
+                    } else {
+                        false
+                    }
+
+                    if (!isWithinSchedule) {
+                        Log.d(TAG, "Worksite ENTER detected for $jobId, but current time/date is outside shift schedule. Auto clock-in skipped.")
+                        continue
+                    }
+
                     // 1. AUTOMATICALLY START WORK & PAYROLL TIME
                     sharedPrefs.edit()
                         .putBoolean("IS_CLOCKED_IN", true)
