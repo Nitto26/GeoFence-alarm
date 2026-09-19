@@ -41,7 +41,8 @@ data class LocationEventItem(
     @SerializedName("worker_id") val workerId: String? = null,
     @SerializedName("location") val location: LocationCoordinate,
     @SerializedName("timestamp") val timestamp: String,
-    @SerializedName("event_type") val eventType: String
+    @SerializedName("event_type") val eventType: String,
+    @SerializedName("is_offline") val isOffline: Boolean? = false
 )
 
 data class LocationEventRequest(

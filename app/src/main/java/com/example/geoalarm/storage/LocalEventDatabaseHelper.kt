@@ -18,7 +18,8 @@ data class LocalEventRecord(
     val timestamp: String,
     val createdAtEpoch: Long,
     val isSynced: Boolean,
-    val syncedAt: String?
+    val syncedAt: String?,
+    val isOffline: Boolean = false
 )
 
 class LocalEventDatabaseHelper private constructor(context: Context) :
@@ -27,7 +28,7 @@ class LocalEventDatabaseHelper private constructor(context: Context) :
     companion object {
         private const val TAG = "LocalEventDb"
         private const val DATABASE_NAME = "GeoAlarmLocalCache.db"
-        private const val DATABASE_VERSION = 1
+        private const val DATABASE_VERSION = 2
 
         const val TABLE_EVENTS = "local_events"
         const val COL_ID = "id"
@@ -39,6 +40,7 @@ class LocalEventDatabaseHelper private constructor(context: Context) :
         const val COL_CREATED_AT_EPOCH = "created_at_epoch"
         const val COL_IS_SYNCED = "is_synced"
         const val COL_SYNCED_AT = "synced_at"
+        const val COL_IS_OFFLINE = "is_offline"
 
         // 3 Days in milliseconds: 3 * 24 * 60 * 60 * 1000 = 259,200,000 ms
         const val THREE_DAYS_MILLIS = 3 * 24 * 60 * 60 * 1000L
@@ -64,7 +66,8 @@ class LocalEventDatabaseHelper private constructor(context: Context) :
                 $COL_TIMESTAMP TEXT NOT NULL,
                 $COL_CREATED_AT_EPOCH INTEGER NOT NULL,
                 $COL_IS_SYNCED INTEGER NOT NULL DEFAULT 0,
-                $COL_SYNCED_AT TEXT
+                $COL_SYNCED_AT TEXT,
+                $COL_IS_OFFLINE INTEGER NOT NULL DEFAULT 0
             )
         """.trimIndent()
         db.execSQL(createTableQuery)
@@ -74,12 +77,19 @@ class LocalEventDatabaseHelper private constructor(context: Context) :
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_EVENTS")
-        onCreate(db)
+        try {
+            db.execSQL("ALTER TABLE $TABLE_EVENTS ADD COLUMN $COL_IS_OFFLINE INTEGER DEFAULT 0")
+        } catch (_: Exception) {
+            db.execSQL("DROP TABLE IF EXISTS $TABLE_EVENTS")
+            onCreate(db)
+        }
     }
 
     override fun onOpen(db: SQLiteDatabase) {
         super.onOpen(db)
+        try {
+            db.execSQL("ALTER TABLE $TABLE_EVENTS ADD COLUMN $COL_IS_OFFLINE INTEGER DEFAULT 0")
+        } catch (_: Exception) {}
         try {
             db.execSQL("DELETE FROM $TABLE_EVENTS WHERE (abs($COL_LATITUDE - 10.5276) < 0.001 AND abs($COL_LONGITUDE - 76.2144) < 0.001) OR ($COL_LATITUDE = 0.0 AND $COL_LONGITUDE = 0.0)")
         } catch (_: Exception) {}
@@ -94,7 +104,8 @@ class LocalEventDatabaseHelper private constructor(context: Context) :
         latitude: Double = 0.0,
         longitude: Double = 0.0,
         timestamp: String,
-        isSynced: Boolean = false
+        isSynced: Boolean = false,
+        isOffline: Boolean = false
     ): Long {
         val db = writableDatabase
         val now = System.currentTimeMillis()
@@ -112,10 +123,11 @@ class LocalEventDatabaseHelper private constructor(context: Context) :
             put(COL_CREATED_AT_EPOCH, now)
             put(COL_IS_SYNCED, if (isSynced) 1 else 0)
             put(COL_SYNCED_AT, if (isSynced) getFormattedDate(now) else null)
+            put(COL_IS_OFFLINE, if (isOffline) 1 else 0)
         }
 
         val id = db.insert(TABLE_EVENTS, null, values)
-        Log.d(TAG, "Stored local event id=$id ($eventType, synced=$isSynced)")
+        Log.d(TAG, "Stored local event id=$id ($eventType, synced=$isSynced, isOffline=$isOffline)")
         return id
     }
 
@@ -210,6 +222,9 @@ class LocalEventDatabaseHelper private constructor(context: Context) :
     }
 
     private fun cursorToRecord(c: android.database.Cursor): LocalEventRecord {
+        val offlineIndex = c.getColumnIndex(COL_IS_OFFLINE)
+        val isOff = if (offlineIndex >= 0) c.getInt(offlineIndex) == 1 else false
+
         return LocalEventRecord(
             id = c.getLong(c.getColumnIndexOrThrow(COL_ID)),
             jobId = c.getString(c.getColumnIndexOrThrow(COL_JOB_ID)),
@@ -219,7 +234,8 @@ class LocalEventDatabaseHelper private constructor(context: Context) :
             timestamp = c.getString(c.getColumnIndexOrThrow(COL_TIMESTAMP)),
             createdAtEpoch = c.getLong(c.getColumnIndexOrThrow(COL_CREATED_AT_EPOCH)),
             isSynced = c.getInt(c.getColumnIndexOrThrow(COL_IS_SYNCED)) == 1,
-            syncedAt = c.getString(c.getColumnIndexOrThrow(COL_SYNCED_AT))
+            syncedAt = c.getString(c.getColumnIndexOrThrow(COL_SYNCED_AT)),
+            isOffline = isOff
         )
     }
 

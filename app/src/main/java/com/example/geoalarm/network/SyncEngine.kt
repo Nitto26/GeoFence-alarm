@@ -165,7 +165,8 @@ object SyncEngine {
                             jobId = record.jobId,
                             location = LocationCoordinate(record.latitude, record.longitude),
                             timestamp = record.timestamp,
-                            eventType = record.eventType
+                            eventType = record.eventType,
+                            isOffline = record.isOffline
                         )
                     }
 

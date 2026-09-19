@@ -55,6 +55,7 @@ object EventReporter {
 
         try {
             // 1. ALWAYS persist event to 3-day local SQLite database first
+            val isCurrentlyOffline = !SyncEngine.isOnlineNow(context)
             val db = LocalEventDatabaseHelper.getInstance(context)
             val recordId = db.insertEvent(
                 eventType = eventType,
@@ -62,9 +63,10 @@ object EventReporter {
                 latitude = latitude,
                 longitude = longitude,
                 timestamp = isoTimestamp,
-                isSynced = false
+                isSynced = false,
+                isOffline = isCurrentlyOffline
             )
-            Log.d(TAG, "Persisted event $recordId locally ($eventType). Triggering auto-sync...")
+            Log.d(TAG, "Persisted event $recordId locally ($eventType, offline=$isCurrentlyOffline). Triggering auto-sync...")
 
             // 2. Trigger auto-sync engine (flushes immediately if online, holds safely if offline)
             SyncEngine.triggerSync(context)
