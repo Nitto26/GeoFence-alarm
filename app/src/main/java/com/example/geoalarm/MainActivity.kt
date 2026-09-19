@@ -1892,6 +1892,37 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 if (!wasInsideStay) {
                     sharedPrefs.edit().putBoolean("WAS_INSIDE_STAY", true).apply()
                 }
+
+                // 2. RETURNING TO ACCOMMODATION AFTER WORK -> AUTO CLOCK OUT / CHECK OUT!
+                if (isClockedIn) {
+                    val activeJobId = sharedPrefs.getString("ACTIVE_JOB_ID", liveJobs.firstOrNull()?.jobId ?: loggedInWorkerId) ?: loggedInWorkerId
+                    val clockInTime = sharedPrefs.getLong("CLOCK_IN_TIMESTAMP", 0L)
+                    val formattedDuration = if (clockInTime > 0L) {
+                        val dur = System.currentTimeMillis() - clockInTime
+                        val h = dur / 3600000
+                        val m = (dur % 3600000) / 60000
+                        String.format("%02dh %02dm", h, m)
+                    } else ""
+
+                    lastInsideJobId = null
+                    sharedPrefs.edit()
+                        .putBoolean("IS_CLOCKED_IN", false)
+                        .putBoolean("IS_SYSTEM_ARMED", false)
+                        .apply()
+
+                    startTimeMillis = 0L
+                    updateClockInOutUi(false)
+                    WorkNotificationManager.showClockOutNotification(this, activeJobId, formattedDuration)
+
+                    EventReporter.reportEvent(
+                        context = this,
+                        eventType = "clock_out",
+                        jobId = activeJobId,
+                        latitude = lat,
+                        longitude = lng
+                    )
+                    EventReporter.addLocalLog("Shift Auto-Ended: Returned to accommodation. Payroll paused.")
+                }
             } else {
                 if (wasInsideStay) {
                     sharedPrefs.edit().putBoolean("WAS_INSIDE_STAY", false).apply()

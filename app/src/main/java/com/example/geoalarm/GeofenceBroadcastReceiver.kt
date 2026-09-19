@@ -54,18 +54,50 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
         val lat = triggeringLocation?.latitude ?: (cachedAcc?.location?.firstOrNull()?.latitude ?: 0.0)
         val lng = triggeringLocation?.longitude ?: (cachedAcc?.location?.firstOrNull()?.longitude ?: 0.0)
 
+        val sharedPrefs = context.getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
+        val isAlreadyClockedIn = sharedPrefs.getBoolean("IS_CLOCKED_IN", false)
+
         if (cachedAcc != null && cachedAcc.location.isNotEmpty()) {
             val stayPt = cachedAcc.location[0]
             val stayDist = FloatArray(1)
             android.location.Location.distanceBetween(lat, lng, stayPt.latitude, stayPt.longitude, stayDist)
-            if (stayDist[0] <= 70f) {
-                Log.d(TAG, "Triggering location is inside Stay Accommodation (${stayDist[0].toInt()}m). Ignoring worksite entry.")
+            if (stayDist[0] <= 80f) {
+                Log.d(TAG, "Triggering location is inside Stay Accommodation (${stayDist[0].toInt()}m).")
+                if (isAlreadyClockedIn) {
+                    val activeJobId = sharedPrefs.getString("ACTIVE_JOB_ID", "Assigned Worksite") ?: "Assigned Worksite"
+                    val clockInTime = sharedPrefs.getLong("CLOCK_IN_TIMESTAMP", 0L)
+                    val formattedDuration = if (clockInTime > 0L) {
+                        val dur = System.currentTimeMillis() - clockInTime
+                        val h = dur / 3600000
+                        val m = (dur % 3600000) / 60000
+                        String.format("%02dh %02dm", h, m)
+                    } else ""
+
+                    sharedPrefs.edit()
+                        .putBoolean("IS_CLOCKED_IN", false)
+                        .putBoolean("IS_SYSTEM_ARMED", false)
+                        .commit()
+
+                    EventReporter.reportEvent(
+                        context = context,
+                        eventType = "clock_out",
+                        jobId = activeJobId,
+                        latitude = lat,
+                        longitude = lng
+                    )
+                    EventReporter.addLocalLog("Shift Auto-Ended: Returned to accommodation. Payroll paused.")
+                    WorkNotificationManager.showClockOutNotification(context, activeJobId, formattedDuration)
+
+                    val stateIntent = Intent(ACTION_WORK_STATE_CHANGED).apply {
+                        putExtra("IS_CLOCKED_IN", false)
+                        putExtra("ACTIVE_JOB_ID", activeJobId)
+                        setPackage(context.packageName)
+                    }
+                    context.sendBroadcast(stateIntent)
+                }
                 return
             }
         }
-
-        val sharedPrefs = context.getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
-        val isAlreadyClockedIn = sharedPrefs.getBoolean("IS_CLOCKED_IN", false)
 
         val cachedJobsJson = geoPrefs.getString("CACHED_JOBS_JSON", null)
         val cachedJobs: List<com.example.geoalarm.network.JobItem> = if (cachedJobsJson != null) {
