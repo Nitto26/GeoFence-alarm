@@ -20,12 +20,17 @@ object ApiClient {
 
     private var currentBaseUrl = DEFAULT_RENDER_URL
     private var retrofitInstance: Retrofit? = null
+    private var cachedApiService: ApiService? = null
 
     fun init(context: Context) {
-        // Always force the built-in Render server URL and overwrite any old cached URLs
-        currentBaseUrl = DEFAULT_RENDER_URL
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit().putString(KEY_BASE_URL, DEFAULT_RENDER_URL).apply()
+        val savedUrl = prefs.getString(KEY_BASE_URL, null)
+        currentBaseUrl = if (!savedUrl.isNullOrBlank() && isValidUrl(savedUrl)) {
+            savedUrl
+        } else {
+            prefs.edit().putString(KEY_BASE_URL, DEFAULT_RENDER_URL).apply()
+            DEFAULT_RENDER_URL
+        }
         
         buildRetrofit()
     }
@@ -76,32 +81,14 @@ object ApiClient {
 
     private fun buildRetrofit() {
         val logging = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
-        }
-
-        val resilientDns = object : okhttp3.Dns {
-            override fun lookup(hostname: String): List<java.net.InetAddress> {
-                return try {
-                    okhttp3.Dns.SYSTEM.lookup(hostname)
-                } catch (e: Exception) {
-                    if (hostname.contains("onrender.com")) {
-                        try {
-                            listOf(
-                                java.net.InetAddress.getByAddress(hostname, byteArrayOf(216.toByte(), 24.toByte(), 57.toByte(), 18.toByte())),
-                                java.net.InetAddress.getByAddress(hostname, byteArrayOf(216.toByte(), 24.toByte(), 57.toByte(), 16.toByte()))
-                            )
-                        } catch (_: Exception) {
-                            throw e
-                        }
-                    } else {
-                        throw e
-                    }
-                }
+            level = if (com.example.geoalarm.BuildConfig.DEBUG) {
+                HttpLoggingInterceptor.Level.BODY
+            } else {
+                HttpLoggingInterceptor.Level.BASIC
             }
         }
 
         val okHttpClient = OkHttpClient.Builder()
-            .dns(resilientDns)
             .addInterceptor(logging)
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
@@ -122,13 +109,15 @@ object ApiClient {
                 .addConverterFactory(GsonConverterFactory.create())
                 .build()
         }
+
+        cachedApiService = retrofitInstance?.create(ApiService::class.java)
     }
 
     val apiService: ApiService
         get() {
-            if (retrofitInstance == null) {
+            if (cachedApiService == null) {
                 buildRetrofit()
             }
-            return retrofitInstance!!.create(ApiService::class.java)
+            return cachedApiService ?: retrofitInstance!!.create(ApiService::class.java)
         }
 }
