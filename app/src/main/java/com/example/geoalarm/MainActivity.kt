@@ -278,6 +278,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         loggedInWorkerName = intent.getStringExtra("EXTRA_WORKER_NAME") ?: userPrefs.getString("WORKER_NAME", "Worker") ?: "Worker"
         loggedInWorkerDesignation = userPrefs.getString("WORKER_DESIGNATION", "Field Technician") ?: "Field Technician"
         loggedInWorkerPhone = userPrefs.getString("WORKER_PHONE", "") ?: ""
+        loggedInWorkerTallyNo = intent.getStringExtra("EXTRA_WORKER_TALLY_NO") ?: userPrefs.getString("WORKER_TALLY_NO", "") ?: ""
 
         updateWorkerProfileViews()
 
@@ -483,7 +484,18 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
     }
 
+    private fun getDynamicGreeting(): String {
+        val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        return when (hour) {
+            in 5..11 -> "Good morning,"
+            in 12..16 -> "Good afternoon,"
+            in 17..21 -> "Good evening,"
+            else -> "Good night,"
+        }
+    }
+
     private fun updateWorkerProfileViews() {
+        val tvHomeGreeting = findViewById<TextView>(R.id.tvHomeGreeting)
         val tvHomeUserName = findViewById<TextView>(R.id.tvHomeUserName)
         val tvHomeTallyNo = findViewById<TextView>(R.id.tvHomeTallyNo)
         val tvProfileName = findViewById<TextView>(R.id.tvProfileName)
@@ -493,6 +505,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val tvProfileAccommodation = findViewById<TextView>(R.id.tvProfileAccommodation)
         val tvProfileCompany = findViewById<TextView>(R.id.tvProfileCompany)
 
+        tvHomeGreeting?.text = getDynamicGreeting()
         tvHomeUserName?.text = loggedInWorkerName
         val displayTally = if (loggedInWorkerTallyNo.isNotEmpty()) loggedInWorkerTallyNo else loggedInWorkerId
         tvHomeTallyNo?.text = "Tally No. $displayTally"
