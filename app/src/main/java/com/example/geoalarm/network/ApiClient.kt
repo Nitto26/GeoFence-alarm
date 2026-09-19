@@ -15,7 +15,7 @@ object ApiClient {
     private const val KEY_BASE_URL = "BASE_URL"
     
     // Built-in Render Production Backend URL
-    const val DEFAULT_RENDER_URL = "https://sgs-test-dashboard.onrender.com/"
+    const val DEFAULT_RENDER_URL = "https://local-test-for-sgs.onrender.com/"
     const val DEFAULT_BASE_URL = DEFAULT_RENDER_URL
 
     private var currentBaseUrl = DEFAULT_RENDER_URL
