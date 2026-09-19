@@ -361,11 +361,41 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         mainFusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         startLiveLocationTracking()
 
-        // Initialize UI with zero worksites state before server sync
-        updateHomeUiWithLiveJobs(emptyList())
+        // Initialize UI with locally cached worksites and accommodation immediately (Instant Offline Support)
+        loadCachedDataOnLaunch()
 
         // Fetch Live Profile & Schedule from Admin Panel Backend
         syncAndRefreshServerData(showUserFeedback = false)
+    }
+
+    private fun loadCachedDataOnLaunch() {
+        val geoPrefs = getSharedPreferences("GeoPrefs", Context.MODE_PRIVATE)
+        val jobsJson = geoPrefs.getString("CACHED_JOBS_JSON", null)
+        val accJson = geoPrefs.getString("CACHED_ACCOMMODATION_JSON", null)
+
+        if (!jobsJson.isNullOrEmpty()) {
+            try {
+                val type = object : com.google.gson.reflect.TypeToken<List<JobItem>>() {}.type
+                val cachedList: List<JobItem> = com.google.gson.Gson().fromJson(jobsJson, type) ?: emptyList()
+                if (cachedList.isNotEmpty()) {
+                    liveJobs = cachedList
+                    updateHomeUiWithLiveJobs(liveJobs)
+                    updateWorkCalendarWithJobs(liveJobs)
+                    if (hasLocationPermission()) {
+                        armAllJobGeofences(liveJobs)
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        if (!accJson.isNullOrEmpty()) {
+            try {
+                liveAccommodation = com.google.gson.Gson().fromJson(accJson, com.example.geoalarm.network.AccommodationItem::class.java)
+                liveAccommodation?.location?.firstOrNull()?.let {
+                    assignedStayCenter = LatLng(it.latitude, it.longitude)
+                }
+            } catch (_: Exception) {}
+        }
     }
 
     // ==========================================
