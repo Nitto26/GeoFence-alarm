@@ -79,7 +79,29 @@ object ApiClient {
             level = HttpLoggingInterceptor.Level.BODY
         }
 
+        val resilientDns = object : okhttp3.Dns {
+            override fun lookup(hostname: String): List<java.net.InetAddress> {
+                return try {
+                    okhttp3.Dns.SYSTEM.lookup(hostname)
+                } catch (e: Exception) {
+                    if (hostname.contains("onrender.com")) {
+                        try {
+                            listOf(
+                                java.net.InetAddress.getByAddress(hostname, byteArrayOf(216.toByte(), 24.toByte(), 57.toByte(), 18.toByte())),
+                                java.net.InetAddress.getByAddress(hostname, byteArrayOf(216.toByte(), 24.toByte(), 57.toByte(), 16.toByte()))
+                            )
+                        } catch (_: Exception) {
+                            throw e
+                        }
+                    } else {
+                        throw e
+                    }
+                }
+            }
+        }
+
         val okHttpClient = OkHttpClient.Builder()
+            .dns(resilientDns)
             .addInterceptor(logging)
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
