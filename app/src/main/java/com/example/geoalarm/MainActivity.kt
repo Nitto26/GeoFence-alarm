@@ -130,11 +130,11 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var startTimeMillis = 0L
 
-    // 30-Second Automatic Server Sync Ticker (Profile & Worksites Real-Time Sync)
+    // 15-Second Automatic Server Sync Ticker (Profile & Worksites Real-Time Sync)
     private val autoSyncTicker = object : Runnable {
         override fun run() {
             syncAndRefreshServerData(showUserFeedback = false)
-            mainHandler.postDelayed(this, 30_000L)
+            mainHandler.postDelayed(this, 15_000L)
         }
     }
 
@@ -530,7 +530,14 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             val firstJob = workJobs[0]
             tvNextWorksiteTitle?.text = firstJob.jobTitle ?: firstJob.jobId
             val activeDays = firstJob.days.joinToString(", ")
-            tvNextWorksiteTime?.text = if (activeDays.isNotEmpty()) "Active: $activeDays" else "Scheduled"
+            val timeText = if (!firstJob.startTime.isNullOrEmpty() && !firstJob.endTime.isNullOrEmpty()) {
+                "${firstJob.startTime} - ${firstJob.endTime}" + if (activeDays.isNotEmpty()) " ($activeDays)" else ""
+            } else if (activeDays.isNotEmpty()) {
+                "Active: $activeDays"
+            } else {
+                "Scheduled"
+            }
+            tvNextWorksiteTime?.text = timeText
             tvNextWorksiteRole?.text = firstJob.jobTitle ?: "Assigned Work"
             tvNextSupervisor?.text = "Field Operations"
         } else {
