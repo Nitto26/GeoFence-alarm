@@ -23,6 +23,14 @@ object EventReporter {
     // Deduplication tracker for non-ping state change events
     private val lastReportedEvents = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
+    @Volatile
+    var currentInsideJobId: String? = null
+        private set
+
+    @Volatile
+    var lastNonPingEventType: String? = null
+        private set
+
     fun addLocalLog(message: String) {
         val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
         liveSystemLogs.add(0, "[$timeStr] $message")
@@ -39,18 +47,49 @@ object EventReporter {
         longitude: Double = 0.0
     ) {
         val now = System.currentTimeMillis()
-        val eventKey = "$eventType-${jobId ?: ""}"
-        val lastTime = lastReportedEvents[eventKey] ?: 0L
+        val normalizedJobId = jobId?.trim()?.ifEmpty { null }
 
-        // Deduplicate non-ping events if reported within last 15 seconds
-        if (eventType != "ping" && (now - lastTime < 15_000L)) {
-            Log.d(TAG, "Suppressed duplicate event dispatch: $eventKey (already reported ${(now - lastTime)/1000}s ago)")
-            return
+        // STRICT STATE TRANSITION VALIDATION & DEDUPLICATION:
+        if (eventType != "ping") {
+            // Rule 1: Cannot EXIT if not currently inside a worksite OR if last reported event was already EXIT
+            if (eventType == "exit") {
+                if (currentInsideJobId == null || lastNonPingEventType == "exit") {
+                    Log.d(TAG, "Suppressed redundant EXIT event: already outside worksite.")
+                    return
+                }
+            }
+
+            // Rule 2: Cannot ENTRY if already recorded inside this exact worksite
+            if (eventType == "entry") {
+                if (currentInsideJobId == normalizedJobId && lastNonPingEventType == "entry") {
+                    Log.d(TAG, "Suppressed redundant ENTRY event: already inside $normalizedJobId.")
+                    return
+                }
+            }
+
+            // Rule 3: Debounce identical non-ping events within 20 seconds
+            val eventKey = "$eventType-${normalizedJobId ?: ""}"
+            val lastTime = lastReportedEvents[eventKey] ?: 0L
+            if (now - lastTime < 20_000L) {
+                Log.d(TAG, "Suppressed rapid duplicate event: $eventKey within 20s")
+                return
+            }
+            lastReportedEvents[eventKey] = now
         }
-        lastReportedEvents[eventKey] = now
+
+        // Update state tracking
+        if (eventType != "ping") {
+            lastNonPingEventType = eventType
+            when (eventType) {
+                "entry", "clock_in" -> currentInsideJobId = normalizedJobId
+                "exit", "clock_out" -> currentInsideJobId = null
+                "accommodation_entry" -> currentInsideJobId = "accommodation"
+                "accommodation_exit" -> currentInsideJobId = null
+            }
+        }
 
         val isoTimestamp = getIsoTimestamp()
-        val displayJob = jobId ?: "Device"
+        val displayJob = normalizedJobId ?: "Device"
         addLocalLog("Event recorded: $eventType ($displayJob)")
 
         try {
@@ -59,7 +98,7 @@ object EventReporter {
             val db = LocalEventDatabaseHelper.getInstance(context)
             val recordId = db.insertEvent(
                 eventType = eventType,
-                jobId = jobId,
+                jobId = normalizedJobId,
                 latitude = latitude,
                 longitude = longitude,
                 timestamp = isoTimestamp,
