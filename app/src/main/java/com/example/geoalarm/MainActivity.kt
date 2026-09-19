@@ -381,8 +381,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
             // 1. Fetch Worksite Schedule from Server
             try {
-                Log.d(TAG, "Connecting to backend at: ${ApiClient.getBaseUrl()}api/mobile/jobs...")
-                val response = ApiClient.apiService.getJobs(workerId = loggedInWorkerId)
+                val idToQuery = if (loggedInWorkerTallyNo.isNotEmpty()) loggedInWorkerTallyNo else loggedInWorkerId
+                Log.d(TAG, "Connecting to backend at: ${ApiClient.getBaseUrl()}api/mobile/jobs?worker_id=$idToQuery...")
+                val response = ApiClient.apiService.getJobs(workerId = idToQuery)
                 
                 if (response.isSuccessful) {
                     val jobs = response.body()?.jobs ?: emptyList()
