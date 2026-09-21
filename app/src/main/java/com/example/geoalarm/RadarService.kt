@@ -314,13 +314,15 @@ class RadarService : Service() {
             }
         }
 
+        val isManualClockedOut = sharedPrefs.getBoolean("MANUAL_CLOCKED_OUT", false)
+
         if (matchedJob != null) {
             val jobId = matchedJob.jobId
             // Only trigger state change if we newly entered this worksite
             if (lastInsideJobId != jobId) {
                 lastInsideJobId = jobId
 
-                if (!isClockedIn) {
+                if (!isClockedIn && !isManualClockedOut) {
                     // Auto Clock In upon arrival at worksite ONLY if current time & date is within shift hours
                     if (ShiftScheduleHelper.isJobWithinShiftHours(matchedJob)) {
                         val now = System.currentTimeMillis()
@@ -378,6 +380,13 @@ class RadarService : Service() {
             if (lastInsideJobId != null) {
                 val exitedJobId = lastInsideJobId ?: "Worksite"
                 lastInsideJobId = null
+
+                if (isManualClockedOut) {
+                    sharedPrefs.edit()
+                        .putBoolean("MANUAL_CLOCKED_OUT", false)
+                        .remove("MANUAL_CLOCKED_OUT_JOB_ID")
+                        .apply()
+                }
 
                 if (isClockedIn) {
                     WorkNotificationManager.showGeofenceExitNotification(this, exitedJobId)

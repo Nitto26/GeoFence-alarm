@@ -911,6 +911,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             sharedPrefs.edit()
                 .putBoolean("IS_CLOCKED_IN", true)
                 .putBoolean("IS_SYSTEM_ARMED", true)
+                .putBoolean("MANUAL_CLOCKED_OUT", false)
+                .remove("MANUAL_CLOCKED_OUT_JOB_ID")
                 .putString("ACTIVE_JOB_ID", activeJobId)
                 .putLong("CLOCK_IN_TIMESTAMP", System.currentTimeMillis())
                 .apply()
@@ -959,10 +961,12 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 String.format("%02dh %02dm", h, m)
             } else ""
 
-            lastInsideJobId = null
+            lastInsideJobId = activeJobId
             sharedPrefs.edit()
                 .putBoolean("IS_CLOCKED_IN", false)
                 .putBoolean("IS_SYSTEM_ARMED", false)
+                .putBoolean("MANUAL_CLOCKED_OUT", true)
+                .putString("MANUAL_CLOCKED_OUT_JOB_ID", activeJobId)
                 .apply()
 
             // 1. Stop background RadarService
@@ -1995,13 +1999,15 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             }
         }
 
+        val isManualClockedOut = sharedPrefs.getBoolean("MANUAL_CLOCKED_OUT", false)
+
         if (matchedJob != null) {
             val jobId = matchedJob.jobId
             // Trigger strictly when transitioning into a new worksite
             if (lastInsideJobId != jobId) {
                 lastInsideJobId = jobId
 
-                if (!isClockedIn) {
+                if (!isClockedIn && !isManualClockedOut) {
                     if (ShiftScheduleHelper.isJobWithinShiftHours(matchedJob)) {
                         val now = System.currentTimeMillis()
                         sharedPrefs.edit()
@@ -2055,6 +2061,13 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             if (lastInsideJobId != null) {
                 val exitedJobId = lastInsideJobId ?: "Worksite"
                 lastInsideJobId = null
+
+                if (isManualClockedOut) {
+                    sharedPrefs.edit()
+                        .putBoolean("MANUAL_CLOCKED_OUT", false)
+                        .remove("MANUAL_CLOCKED_OUT_JOB_ID")
+                        .apply()
+                }
 
                 if (isClockedIn) {
                     WorkNotificationManager.showGeofenceExitNotification(this, exitedJobId)
