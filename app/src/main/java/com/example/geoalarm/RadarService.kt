@@ -203,29 +203,29 @@ class RadarService : Service() {
 
 
     private fun processLocationAgainstJobsAndStay(
-        lat: Double, 
-        lng: Double, 
-        jobs: List<JobItem>, 
+        lat: Double,
+        lng: Double,
+        jobs: List<JobItem>,
         accommodation: AccommodationItem?
     ) {
         val sharedPrefs = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
         val isClockedIn = sharedPrefs.getBoolean("IS_CLOCKED_IN", false)
+        val wasInsideStay = sharedPrefs.getBoolean("WAS_INSIDE_STAY", false)
 
-        // 1. Evaluate Stay / Accommodation Departure
+        // 1. EVALUATE STAY / ACCOMMODATION (Priority #1)
         if (accommodation != null && accommodation.location.isNotEmpty()) {
             val stayDist = FloatArray(1)
             val stayPt = accommodation.location[0]
             android.location.Location.distanceBetween(lat, lng, stayPt.latitude, stayPt.longitude, stayDist)
-            
-            val isInsideStay = stayDist[0] <= 80f
-            val wasInsideStay = sharedPrefs.getBoolean("WAS_INSIDE_STAY", false)
+            val distToStay = stayDist[0]
 
-            if (isInsideStay) {
+            // Inside Stay: <= 80 meters
+            if (distToStay <= 80f) {
                 if (!wasInsideStay) {
                     sharedPrefs.edit().putBoolean("WAS_INSIDE_STAY", true).apply()
                 }
 
-                // 2. RETURNING TO ACCOMMODATION AFTER WORK -> AUTO CLOCK OUT / CHECK OUT!
+                // Returning to Accommodation after shift -> AUTO CLOCK OUT
                 if (isClockedIn) {
                     val activeJobId = sharedPrefs.getString("ACTIVE_JOB_ID", jobs.firstOrNull()?.jobId ?: "Assigned Worksite") ?: "Assigned Worksite"
                     val clockInTime = sharedPrefs.getLong("CLOCK_IN_TIMESTAMP", 0L)
@@ -261,51 +261,54 @@ class RadarService : Service() {
                     }
                     sendBroadcast(stateIntent)
                 }
-            } else {
-                // Outside stay
-                if (wasInsideStay) {
-                    // DEPARTED STAY / ACCOMMODATION -> AUTO CLOCK IN ONLY IF WITHIN SHIFT SCHEDULE!
-                    sharedPrefs.edit().putBoolean("WAS_INSIDE_STAY", false).apply()
 
-                    if (!isClockedIn) {
-                        if (ShiftScheduleHelper.isAnyJobWithinShiftHours(jobs)) {
-                            val now = System.currentTimeMillis()
-                            val primaryJobId = jobs.firstOrNull()?.jobId ?: "Assigned Worksite"
-                            sharedPrefs.edit()
-                                .putBoolean("IS_CLOCKED_IN", true)
-                                .putBoolean("IS_SYSTEM_ARMED", true)
-                                .putLong("CLOCK_IN_TIMESTAMP", now)
-                                .putString("ACTIVE_JOB_ID", primaryJobId)
-                                .commit()
+                // CRITICAL: Inside Stay -> Do NOT evaluate worksite arrival in same tick
+                return
+            }
 
-                            updateForegroundNotification()
-                            WorkNotificationManager.showClockInNotification(this, primaryJobId, isAuto = true)
+            // Outside Stay Hysteresis: Must be > 150m away before triggering Stay Departure
+            if (wasInsideStay && distToStay > 150f) {
+                sharedPrefs.edit().putBoolean("WAS_INSIDE_STAY", false).apply()
 
-                            EventReporter.reportEvent(
-                                context = this,
-                                eventType = "clock_in",
-                                jobId = primaryJobId,
-                                latitude = lat,
-                                longitude = lng
-                            )
-                            EventReporter.addLocalLog("Shift Auto-Started: Exited accommodation. Payroll timer active.")
+                if (!isClockedIn) {
+                    if (ShiftScheduleHelper.isAnyJobWithinShiftHours(jobs)) {
+                        val now = System.currentTimeMillis()
+                        val primaryJobId = jobs.firstOrNull()?.jobId ?: "Assigned Worksite"
+                        sharedPrefs.edit()
+                            .putBoolean("IS_CLOCKED_IN", true)
+                            .putBoolean("IS_SYSTEM_ARMED", true)
+                            .putLong("CLOCK_IN_TIMESTAMP", now)
+                            .putString("ACTIVE_JOB_ID", primaryJobId)
+                            .commit()
 
-                            val stateIntent = Intent(GeofenceBroadcastReceiver.ACTION_WORK_STATE_CHANGED).apply {
-                                putExtra("IS_CLOCKED_IN", true)
-                                putExtra("CLOCK_IN_TIMESTAMP", now)
-                                putExtra("ACTIVE_JOB_ID", primaryJobId)
-                                setPackage(packageName)
-                            }
-                            sendBroadcast(stateIntent)
-                        } else {
-                            Log.d(TAG, "Stay departure detected, but current time is outside shift schedule. Auto clock-in skipped.")
+                        updateForegroundNotification()
+                        WorkNotificationManager.showClockInNotification(this, primaryJobId, isAuto = true)
+
+                        EventReporter.reportEvent(
+                            context = this,
+                            eventType = "clock_in",
+                            jobId = primaryJobId,
+                            latitude = lat,
+                            longitude = lng
+                        )
+                        EventReporter.addLocalLog("Shift Auto-Started: Exited accommodation. Payroll timer active.")
+
+                        val stateIntent = Intent(GeofenceBroadcastReceiver.ACTION_WORK_STATE_CHANGED).apply {
+                            putExtra("IS_CLOCKED_IN", true)
+                            putExtra("CLOCK_IN_TIMESTAMP", now)
+                            putExtra("ACTIVE_JOB_ID", primaryJobId)
+                            setPackage(packageName)
                         }
+                        sendBroadcast(stateIntent)
+                        return
+                    } else {
+                        Log.d(TAG, "Stay departure detected, but current time is outside shift schedule. Auto clock-in skipped.")
                     }
                 }
             }
         }
 
-        // 2. Evaluate Assigned Worksite Geofences
+        // 2. EVALUATE ASSIGNED WORKSITES
         var matchedJob: JobItem? = null
         for (job in jobs) {
             if (isCoordinateInsideJob(lat, lng, job)) {
@@ -314,15 +317,13 @@ class RadarService : Service() {
             }
         }
 
-        val isManualClockedOut = sharedPrefs.getBoolean("MANUAL_CLOCKED_OUT", false)
-
         if (matchedJob != null) {
             val jobId = matchedJob.jobId
             // Only trigger state change if we newly entered this worksite
             if (lastInsideJobId != jobId) {
                 lastInsideJobId = jobId
 
-                if (!isClockedIn && !isManualClockedOut) {
+                if (!isClockedIn) {
                     // Auto Clock In upon arrival at worksite ONLY if current time & date is within shift hours
                     if (ShiftScheduleHelper.isJobWithinShiftHours(matchedJob)) {
                         val now = System.currentTimeMillis()
@@ -380,13 +381,6 @@ class RadarService : Service() {
             if (lastInsideJobId != null) {
                 val exitedJobId = lastInsideJobId ?: "Worksite"
                 lastInsideJobId = null
-
-                if (isManualClockedOut) {
-                    sharedPrefs.edit()
-                        .putBoolean("MANUAL_CLOCKED_OUT", false)
-                        .remove("MANUAL_CLOCKED_OUT_JOB_ID")
-                        .apply()
-                }
 
                 if (isClockedIn) {
                     WorkNotificationManager.showGeofenceExitNotification(this, exitedJobId)
