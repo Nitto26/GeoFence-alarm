@@ -25,7 +25,9 @@ object ApiClient {
     fun init(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val savedUrl = prefs.getString(KEY_BASE_URL, null)
-        currentBaseUrl = if (!savedUrl.isNullOrBlank() && isValidUrl(savedUrl)) {
+
+        // Automatically migrate if empty, invalid, or pointing to the old deprecated backend
+        currentBaseUrl = if (!savedUrl.isNullOrBlank() && isValidUrl(savedUrl) && !savedUrl.contains("sgs-field-tracker-backend.onrender.com")) {
             savedUrl
         } else {
             prefs.edit().putString(KEY_BASE_URL, DEFAULT_RENDER_URL).apply()

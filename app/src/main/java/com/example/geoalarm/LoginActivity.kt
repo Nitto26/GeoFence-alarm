@@ -43,6 +43,31 @@ class LoginActivity : AppCompatActivity() {
 
         // Display current active cloud server
         tvConnectionStatus?.text = "Server: ${ApiClient.getBaseUrl()}"
+        tvConnectionStatus?.isClickable = true
+        tvConnectionStatus?.setOnClickListener {
+            val input = EditText(this)
+            input.setText(ApiClient.getBaseUrl())
+            AlertDialog.Builder(this)
+                .setTitle("Cloud Backend Server URL")
+                .setMessage("Active Render Server. You can reset to default or specify a new backend URL.")
+                .setView(input)
+                .setPositiveButton("Save & Switch") { _, _ ->
+                    val newUrl = input.text.toString().trim()
+                    if (ApiClient.setBaseUrl(this, newUrl)) {
+                        tvConnectionStatus?.text = "Server: ${ApiClient.getBaseUrl()}"
+                        Toast.makeText(this, "Updated backend: ${ApiClient.getBaseUrl()}", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(this, "Invalid URL format", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                .setNeutralButton("Reset Default") { _, _ ->
+                    ApiClient.setBaseUrl(this, ApiClient.DEFAULT_RENDER_URL)
+                    tvConnectionStatus?.text = "Server: ${ApiClient.getBaseUrl()}"
+                    Toast.makeText(this, "Reset to: ${ApiClient.DEFAULT_RENDER_URL}", Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
 
         // 1. One-Time Persistent Login Check: If already authenticated, skip login screen
         val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
