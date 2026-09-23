@@ -7,6 +7,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Color
@@ -160,29 +161,73 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
     }
 
-    // Live Clock & Shift Ticker
+    fun getDailyAccumulatedWorkedMillis(sharedPrefs: SharedPreferences): Long {
+        val todayYmd = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        val savedDate = sharedPrefs.getString("DAILY_WORKED_DATE", "")
+        return if (savedDate == todayYmd) {
+            sharedPrefs.getLong("DAILY_WORKED_MILLIS", 0L)
+        } else {
+            0L
+        }
+    }
+
+    private fun pauseAndAccumulateDailyWorkTime(sharedPrefs: SharedPreferences) {
+        val clockInTime = sharedPrefs.getLong("CLOCK_IN_TIMESTAMP", 0L)
+        val todayYmd = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        val savedDate = sharedPrefs.getString("DAILY_WORKED_DATE", "")
+        val prevAccumulated = if (savedDate == todayYmd) sharedPrefs.getLong("DAILY_WORKED_MILLIS", 0L) else 0L
+
+        val sessionElapsed = if (clockInTime > 0L) {
+            Math.max(0L, System.currentTimeMillis() - clockInTime)
+        } else 0L
+
+        sharedPrefs.edit()
+            .putString("DAILY_WORKED_DATE", todayYmd)
+            .putLong("DAILY_WORKED_MILLIS", prevAccumulated + sessionElapsed)
+            .putLong("CLOCK_IN_TIMESTAMP", 0L)
+            .apply()
+    }
+
+    private fun startOrResumeDailyWorkTime(sharedPrefs: SharedPreferences, now: Long) {
+        val todayYmd = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        val savedDate = sharedPrefs.getString("DAILY_WORKED_DATE", "")
+        val editor = sharedPrefs.edit()
+        if (savedDate != todayYmd) {
+            editor.putString("DAILY_WORKED_DATE", todayYmd)
+            editor.putLong("DAILY_WORKED_MILLIS", 0L)
+        }
+        editor.putLong("CLOCK_IN_TIMESTAMP", now)
+        editor.apply()
+    }
+
+    // Live Clock & Shift Ticker (Cumulative Daily Work Timer)
     private val clockTicker = object : Runnable {
         override fun run() {
             // 1. Update Home Current Time Clock (always live)
             val tvTime = findViewById<TextView>(R.id.tvLiveCurrentTime)
             tvTime?.text = SimpleDateFormat("hh:mm:ss a", Locale.getDefault()).format(Date())
 
-            // 2. Update Hours Worked Shift Timer (only advances when Clocked In)
+            // 2. Update Hours Worked Shift Timer (Cumulative Daily Timer)
             val sharedPrefs = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
             val isClockedIn = sharedPrefs.getBoolean("IS_CLOCKED_IN", false)
 
             val tvTimer = findViewById<TextView>(R.id.tvHoursWorkedTimer)
             if (tvTimer != null) {
+                val accumulated = getDailyAccumulatedWorkedMillis(sharedPrefs)
                 if (isClockedIn) {
                     val clockInTimestamp = sharedPrefs.getLong("CLOCK_IN_TIMESTAMP", 0L)
                     val baseTime = if (clockInTimestamp > 0L) clockInTimestamp else (if (startTimeMillis > 0L) startTimeMillis else System.currentTimeMillis())
-                    val elapsed = System.currentTimeMillis() - baseTime
-                    val hours = elapsed / 3600000
-                    val minutes = (elapsed % 3600000) / 60000
-                    val seconds = (elapsed % 60000) / 1000
+                    val sessionElapsed = Math.max(0L, System.currentTimeMillis() - baseTime)
+                    val totalWorked = accumulated + sessionElapsed
+                    val hours = totalWorked / 3600000
+                    val minutes = (totalWorked % 3600000) / 60000
+                    val seconds = (totalWorked % 60000) / 1000
                     tvTimer.text = String.format("%02dh %02dm %02ds", hours, minutes, seconds)
                 } else {
-                    tvTimer.text = "00h 00m 00s (Paused)"
+                    val hours = accumulated / 3600000
+                    val minutes = (accumulated % 3600000) / 60000
+                    val seconds = (accumulated % 60000) / 1000
+                    tvTimer.text = String.format("%02dh %02dm %02ds (Paused)", hours, minutes, seconds)
                 }
             }
 
@@ -205,6 +250,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private lateinit var mainFusedLocationClient: FusedLocationProviderClient
     private var mainLocationCallback: LocationCallback? = null
     private var lastInsideJobId: String? = null
+    private var consecutiveExitCount = 0
 
     // OS Level Sabotage & Geofence Engine
     private val locationStateReceiver = LocationStateReceiver()
@@ -248,6 +294,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 enableUserLocation()
             } else {
                 Log.e(TAG, "User refused location services.")
+                Toast.makeText(this, "Location is required to use SGS Field Tracker. Closing app...", Toast.LENGTH_LONG).show()
+                finishAffinity()
             }
         }
 
@@ -381,6 +429,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     liveJobs = cachedList
                     updateHomeUiWithLiveJobs(liveJobs)
                     updateWorkCalendarWithJobs(liveJobs)
+                    ShiftAlarmScheduler.scheduleNextShiftAlarm(this)
                     if (hasLocationPermission()) {
                         armAllJobGeofences(liveJobs)
                     }
@@ -440,6 +489,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                         EventReporter.addLocalLog("Schedule updated (${jobs.size} jobs)")
                         updateHomeUiWithLiveJobs(jobs)
                         updateWorkCalendarWithJobs(jobs)
+                        ShiftAlarmScheduler.scheduleNextShiftAlarm(this@MainActivity)
                         if (hasLocationPermission()) {
                             armAllJobGeofences(jobs)
                             startRadarServiceSafely()
@@ -907,17 +957,18 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 return
             }
 
-             val activeJobId = if (liveJobs.isNotEmpty()) liveJobs[0].jobId else loggedInWorkerId
+            val now = System.currentTimeMillis()
+            val activeJobId = if (liveJobs.isNotEmpty()) liveJobs[0].jobId else loggedInWorkerId
+            startOrResumeDailyWorkTime(sharedPrefs, now)
             sharedPrefs.edit()
                 .putBoolean("IS_CLOCKED_IN", true)
                 .putBoolean("IS_SYSTEM_ARMED", true)
                 .putBoolean("MANUAL_CLOCKED_OUT", false)
                 .remove("MANUAL_CLOCKED_OUT_JOB_ID")
                 .putString("ACTIVE_JOB_ID", activeJobId)
-                .putLong("CLOCK_IN_TIMESTAMP", System.currentTimeMillis())
                 .apply()
 
-            startTimeMillis = System.currentTimeMillis()
+            startTimeMillis = now
 
             // 1. Start background RadarService
             startRadarServiceSafely()
@@ -954,13 +1005,14 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             // CLOCK OUT ACTION
             val activeJobId = sharedPrefs.getString("ACTIVE_JOB_ID", if (liveJobs.isNotEmpty()) liveJobs[0].jobId else loggedInWorkerId) ?: loggedInWorkerId
             val clockInTime = sharedPrefs.getLong("CLOCK_IN_TIMESTAMP", 0L)
-            val formattedDuration = if (clockInTime > 0L) {
-                val dur = System.currentTimeMillis() - clockInTime
+            val dur = if (clockInTime > 0L) System.currentTimeMillis() - clockInTime else 0L
+            val formattedDuration = if (dur > 0L) {
                 val h = dur / 3600000
                 val m = (dur % 3600000) / 60000
                 String.format("%02dh %02dm", h, m)
             } else ""
 
+            pauseAndAccumulateDailyWorkTime(sharedPrefs)
             lastInsideJobId = activeJobId
             sharedPrefs.edit()
                 .putBoolean("IS_CLOCKED_IN", false)
@@ -1885,13 +1937,19 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private fun startLiveLocationTracking() {
         if (!hasLocationPermission()) return
 
-        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2000)
-            .setMinUpdateDistanceMeters(1f)
+        // Battery optimization: 5s interval, min 2m displacement
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5000)
+            .setMinUpdateDistanceMeters(2f)
+            .setMinUpdateIntervalMillis(3000)
             .build()
 
         mainLocationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 for (loc in result.locations) {
+                    if (!GeofenceHelper.isLocationAccurate(loc)) {
+                        Log.d(TAG, "Skipping inaccurate GPS fix (${loc.accuracy}m)")
+                        continue
+                    }
                     currentGpsLocation = LatLng(loc.latitude, loc.longitude)
                     checkAndTriggerWorksiteArrival(loc.latitude, loc.longitude)
                 }
@@ -1919,6 +1977,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         if (matchedJob != null) {
             val jobId = matchedJob.jobId
+            consecutiveExitCount = 0 // Reset exit debounce immediately
+
             // When worker is at a worksite, they are definitely NOT at accommodation
             if (wasInsideStay) {
                 sharedPrefs.edit().putBoolean("WAS_INSIDE_STAY", false).apply()
@@ -1930,10 +1990,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 if (!isClockedIn) {
                     if (ShiftScheduleHelper.isJobWithinShiftHours(matchedJob)) {
                         val now = System.currentTimeMillis()
+                        startOrResumeDailyWorkTime(sharedPrefs, now)
                         sharedPrefs.edit()
                             .putBoolean("IS_CLOCKED_IN", true)
                             .putBoolean("IS_SYSTEM_ARMED", true)
-                            .putLong("CLOCK_IN_TIMESTAMP", now)
                             .putString("ACTIVE_JOB_ID", jobId)
                             .apply()
 
@@ -1980,6 +2040,12 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         // 2. WORKER IS OUTSIDE ALL ASSIGNED WORKSITES (matchedJob == null)
         if (lastInsideJobId != null) {
+            consecutiveExitCount++
+            if (consecutiveExitCount < 3) {
+                Log.d(TAG, "Worksite exit pending debounce: reading $consecutiveExitCount/3 outside $lastInsideJobId")
+                return
+            }
+            consecutiveExitCount = 0
             val exitedJobId = lastInsideJobId ?: "Worksite"
             lastInsideJobId = null
 
@@ -2018,13 +2084,14 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     }
 
                     val activeJobId = sharedPrefs.getString("ACTIVE_JOB_ID", liveJobs.firstOrNull()?.jobId ?: loggedInWorkerId) ?: loggedInWorkerId
-                    val formattedDuration = if (clockInTime > 0L) {
-                        val dur = System.currentTimeMillis() - clockInTime
+                    val dur = if (clockInTime > 0L) System.currentTimeMillis() - clockInTime else 0L
+                    val formattedDuration = if (dur > 0L) {
                         val h = dur / 3600000
                         val m = (dur % 3600000) / 60000
                         String.format("%02dh %02dm", h, m)
                     } else ""
 
+                    pauseAndAccumulateDailyWorkTime(sharedPrefs)
                     lastInsideJobId = null
                     sharedPrefs.edit()
                         .putBoolean("IS_CLOCKED_IN", false)
@@ -2055,10 +2122,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     if (ShiftScheduleHelper.isAnyJobWithinShiftHours(liveJobs)) {
                         val now = System.currentTimeMillis()
                         val primaryJobId = liveJobs.firstOrNull()?.jobId ?: loggedInWorkerId
+                        startOrResumeDailyWorkTime(sharedPrefs, now)
                         sharedPrefs.edit()
                             .putBoolean("IS_CLOCKED_IN", true)
                             .putBoolean("IS_SYSTEM_ARMED", true)
-                            .putLong("CLOCK_IN_TIMESTAMP", now)
                             .putString("ACTIVE_JOB_ID", primaryJobId)
                             .apply()
 
@@ -2088,8 +2155,18 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val isClockedIn = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
             .getBoolean("IS_CLOCKED_IN", false)
         updateClockInOutUi(isClockedIn)
+
+        // Check if GPS is enabled; prompt turn on if disabled
+        val locationManager = getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+        val isGpsEnabled = locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true
+        val isNetworkEnabled = locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true
+        if (!isGpsEnabled && !isNetworkEnabled) {
+            checkLocationSettings()
+        }
+
         startLiveLocationTracking()
         syncAndRefreshServerData(showUserFeedback = false)
+        ShiftAlarmScheduler.scheduleNextShiftAlarm(this)
     }
 
     override fun onDestroy() {

@@ -19,6 +19,7 @@ object WorkNotificationManager {
     const val NOTIF_ID_CLOCK_OUT = 2002
     const val NOTIF_ID_GEOFENCE_ENTRY = 2003
     const val NOTIF_ID_GEOFENCE_EXIT = 2004
+    const val NOTIF_ID_SHIFT_SCHEDULE = 2005
 
     // Deduplication tracker: prevents repeating identical notifications on periodic pings
     @Volatile
@@ -100,6 +101,12 @@ object WorkNotificationManager {
         val title = "Left Worksite Perimeter"
         val message = "You have exited $jobId boundary."
         showNotification(context, NOTIF_ID_GEOFENCE_EXIT, title, message)
+    }
+
+    @Synchronized
+    fun showShiftScheduleNotification(context: Context, jobName: String, timeText: String) {
+        val title = "Shift Started: $jobName"
+        showNotification(context, NOTIF_ID_SHIFT_SCHEDULE, title, timeText)
     }
 
     fun resetNotificationState() {

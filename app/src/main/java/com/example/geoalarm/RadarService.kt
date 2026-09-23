@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.location.LocationManager
@@ -27,6 +28,9 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
@@ -37,6 +41,36 @@ class RadarService : Service() {
     private lateinit var locationCallback: LocationCallback
     private var lastPingTimestamp = 0L
     private var lastInsideJobId: String? = null
+    private var consecutiveExitCount = 0
+
+    private fun pauseAndAccumulateDailyWorkTime(sharedPrefs: SharedPreferences) {
+        val clockInTime = sharedPrefs.getLong("CLOCK_IN_TIMESTAMP", 0L)
+        val todayYmd = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        val savedDate = sharedPrefs.getString("DAILY_WORKED_DATE", "")
+        val prevAccumulated = if (savedDate == todayYmd) sharedPrefs.getLong("DAILY_WORKED_MILLIS", 0L) else 0L
+
+        val sessionElapsed = if (clockInTime > 0L) {
+            Math.max(0L, System.currentTimeMillis() - clockInTime)
+        } else 0L
+
+        sharedPrefs.edit()
+            .putString("DAILY_WORKED_DATE", todayYmd)
+            .putLong("DAILY_WORKED_MILLIS", prevAccumulated + sessionElapsed)
+            .putLong("CLOCK_IN_TIMESTAMP", 0L)
+            .commit()
+    }
+
+    private fun startOrResumeDailyWorkTime(sharedPrefs: SharedPreferences, now: Long) {
+        val todayYmd = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        val savedDate = sharedPrefs.getString("DAILY_WORKED_DATE", "")
+        val editor = sharedPrefs.edit()
+        if (savedDate != todayYmd) {
+            editor.putString("DAILY_WORKED_DATE", todayYmd)
+            editor.putLong("DAILY_WORKED_MILLIS", 0L)
+        }
+        editor.putLong("CLOCK_IN_TIMESTAMP", now)
+        editor.commit()
+    }
 
     companion object {
         private const val TAG = "RadarService"
@@ -155,8 +189,11 @@ class RadarService : Service() {
             } catch (_: Exception) {}
         }
 
-        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 3000)
+        // Battery optimization: 10s interval, min 2m displacement, batching with max delay 10s
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 10000)
+            .setMinUpdateIntervalMillis(5000)
             .setMinUpdateDistanceMeters(2f)
+            .setMaxUpdateDelayMillis(10000)
             .build()
 
         locationCallback = object : LocationCallback() {
@@ -169,6 +206,11 @@ class RadarService : Service() {
                 val accommodation = loadCachedAccommodation()
 
                 for (location in locationResult.locations) {
+                    if (!GeofenceHelper.isLocationAccurate(location)) {
+                        Log.d(TAG, "RadarService: Skipping inaccurate GPS ping (${location.accuracy}m)")
+                        continue
+                    }
+
                     val lat = location.latitude
                     val lng = location.longitude
                     val now = System.currentTimeMillis()
@@ -194,7 +236,7 @@ class RadarService : Service() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             try {
                 fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper())
-                Log.d(TAG, "RadarService location updates active (3s interval, high accuracy)")
+                Log.d(TAG, "RadarService location updates active (battery-optimized adaptive interval, high accuracy)")
             } catch (e: SecurityException) {
                 Log.e(TAG, "SecurityException requesting location updates: ${e.message}")
             }
@@ -217,6 +259,8 @@ class RadarService : Service() {
 
         if (matchedJob != null) {
             val jobId = matchedJob.jobId
+            consecutiveExitCount = 0 // Reset exit debounce immediately
+
             // When worker is at a worksite, they are definitely NOT at accommodation
             if (wasInsideStay) {
                 sharedPrefs.edit().putBoolean("WAS_INSIDE_STAY", false).apply()
@@ -229,10 +273,10 @@ class RadarService : Service() {
                     // Auto Clock In upon arrival at worksite ONLY if current time & date is within shift hours
                     if (ShiftScheduleHelper.isJobWithinShiftHours(matchedJob)) {
                         val now = System.currentTimeMillis()
+                        startOrResumeDailyWorkTime(sharedPrefs, now)
                         sharedPrefs.edit()
                             .putBoolean("IS_CLOCKED_IN", true)
                             .putBoolean("IS_SYSTEM_ARMED", true)
-                            .putLong("CLOCK_IN_TIMESTAMP", now)
                             .putString("ACTIVE_JOB_ID", jobId)
                             .commit()
 
@@ -284,6 +328,12 @@ class RadarService : Service() {
 
         // 2. WORKER IS OUTSIDE ALL WORKSITES (matchedJob == null)
         if (lastInsideJobId != null) {
+            consecutiveExitCount++
+            if (consecutiveExitCount < 3) {
+                Log.d(TAG, "RadarService exit pending debounce: reading $consecutiveExitCount/3 outside $lastInsideJobId")
+                return
+            }
+            consecutiveExitCount = 0
             val exitedJobId = lastInsideJobId ?: "Worksite"
             lastInsideJobId = null
 
@@ -321,13 +371,14 @@ class RadarService : Service() {
                     }
 
                     val activeJobId = sharedPrefs.getString("ACTIVE_JOB_ID", jobs.firstOrNull()?.jobId ?: "Assigned Worksite") ?: "Assigned Worksite"
-                    val formattedDuration = if (clockInTime > 0L) {
-                        val dur = System.currentTimeMillis() - clockInTime
+                    val dur = if (clockInTime > 0L) System.currentTimeMillis() - clockInTime else 0L
+                    val formattedDuration = if (dur > 0L) {
                         val h = dur / 3600000
                         val m = (dur % 3600000) / 60000
                         String.format("%02dh %02dm", h, m)
                     } else ""
 
+                    pauseAndAccumulateDailyWorkTime(sharedPrefs)
                     lastInsideJobId = null
                     sharedPrefs.edit()
                         .putBoolean("IS_CLOCKED_IN", false)
@@ -364,10 +415,10 @@ class RadarService : Service() {
                     if (ShiftScheduleHelper.isAnyJobWithinShiftHours(jobs)) {
                         val now = System.currentTimeMillis()
                         val primaryJobId = jobs.firstOrNull()?.jobId ?: "Assigned Worksite"
+                        startOrResumeDailyWorkTime(sharedPrefs, now)
                         sharedPrefs.edit()
                             .putBoolean("IS_CLOCKED_IN", true)
                             .putBoolean("IS_SYSTEM_ARMED", true)
-                            .putLong("CLOCK_IN_TIMESTAMP", now)
                             .putString("ACTIVE_JOB_ID", primaryJobId)
                             .commit()
 

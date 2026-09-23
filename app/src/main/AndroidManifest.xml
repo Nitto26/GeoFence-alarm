@@ -18,6 +18,7 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- For Android 13+ Notifications -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -70,6 +71,17 @@
             <intent-filter>
                 <action android:name="android.location.PROVIDERS_CHANGED" />
                 <action android:name="android.location.MODE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Offline Shift Start Alarm Receiver -->
+        <receiver
+            android:name=".ShiftAlarmReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="com.example.geoalarm.ACTION_SHIFT_START_ALARM" />
             </intent-filter>
         </receiver>
 
