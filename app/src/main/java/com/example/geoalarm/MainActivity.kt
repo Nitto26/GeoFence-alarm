@@ -242,6 +242,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 }
             }
 
+            // 3. Mandatory Location Enforcement while App is Open
+            if (!isLocationServicesEnabled()) {
+                if (!isLocationPromptShowing && (fallbackDialog == null || fallbackDialog?.isShowing == false)) {
+                    isLocationPromptShowing = true
+                    checkLocationSettings()
+                }
+            } else {
+                isLocationPromptShowing = false
+            }
+
             mainHandler.postDelayed(this, 1000)
         }
     }
@@ -252,8 +262,45 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private var lastInsideJobId: String? = null
     private var consecutiveExitCount = 0
 
-    // OS Level Sabotage & Geofence Engine
-    private val locationStateReceiver = LocationStateReceiver()
+    // Mandatory Location Check & State Handling while App is Open
+    private var isLocationPromptShowing = false
+    private var fallbackDialog: AlertDialog? = null
+
+    fun isLocationServicesEnabled(): Boolean {
+        val locationManager = getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return false
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            locationManager.isLocationEnabled
+        } else {
+            val isGpsEnabled = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+            val isNetworkEnabled = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+            isGpsEnabled || isNetworkEnabled
+        }
+    }
+
+    private fun checkLocationEnabledOrPrompt() {
+        if (!isLocationServicesEnabled()) {
+            if (!isLocationPromptShowing && (fallbackDialog == null || fallbackDialog?.isShowing == false)) {
+                isLocationPromptShowing = true
+                checkLocationSettings()
+            }
+        } else {
+            isLocationPromptShowing = false
+            fallbackDialog?.dismiss()
+            fallbackDialog = null
+            enableUserLocation()
+        }
+    }
+
+    private val foregroundLocationReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val action = intent?.action ?: return
+            if (action == LocationManager.PROVIDERS_CHANGED_ACTION || action == "android.location.MODE_CHANGED") {
+                Log.d(TAG, "Location provider changed while app is open. Checking location state...")
+                checkLocationEnabledOrPrompt()
+            }
+        }
+    }
+
     private lateinit var geofencingClient: GeofencingClient
     private val geofencePendingIntent: PendingIntent by lazy {
         val intent = Intent(this, GeofenceBroadcastReceiver::class.java)
@@ -289,11 +336,13 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private val resolutionForResult =
         registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+            isLocationPromptShowing = false
             if (result.resultCode == RESULT_OK) {
                 Log.d(TAG, "User enabled location services.")
                 enableUserLocation()
+                startLiveLocationTracking()
             } else {
-                Log.e(TAG, "User refused location services.")
+                Log.e(TAG, "User refused location services (clicked 'No thanks'). Closing app.")
                 Toast.makeText(this, "Location is required to use SGS Field Tracker. Closing app...", Toast.LENGTH_LONG).show()
                 finishAffinity()
             }
@@ -370,7 +419,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             startRadarServiceSafely()
         }
 
-        // Register Location State Receiver for OS Sabotage Alarm
+        // Register Foreground Location Receiver for Mandatory Location Enforcement while App is Open
         try {
             val filter = IntentFilter().apply {
                 addAction(LocationManager.PROVIDERS_CHANGED_ACTION)
@@ -378,7 +427,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             }
             ContextCompat.registerReceiver(
                 this,
-                locationStateReceiver,
+                foregroundLocationReceiver,
                 filter,
                 ContextCompat.RECEIVER_EXPORTED
             )
@@ -1910,10 +1959,13 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private fun checkLocationSettings() {
         val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 10000).build()
-        val builder = LocationSettingsRequest.Builder().addLocationRequest(locationRequest)
+        val builder = LocationSettingsRequest.Builder()
+            .addLocationRequest(locationRequest)
+            .setAlwaysShow(true)
         val client = LocationServices.getSettingsClient(this)
 
         client.checkLocationSettings(builder.build()).addOnSuccessListener {
+            isLocationPromptShowing = false
             enableUserLocation()
         }.addOnFailureListener { exception ->
             if (exception is ResolvableApiException) {
@@ -1922,9 +1974,34 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     resolutionForResult.launch(intentSenderRequest)
                 } catch (sendEx: Exception) {
                     Log.e(TAG, "Error showing location prompt", sendEx)
+                    showFallbackLocationDialog()
                 }
+            } else {
+                showFallbackLocationDialog()
             }
         }
+    }
+
+    private fun showFallbackLocationDialog() {
+        if (isFinishing || isDestroyed) return
+        if (fallbackDialog?.isShowing == true) return
+
+        fallbackDialog = AlertDialog.Builder(this)
+            .setTitle("Turn On Location")
+            .setMessage("SGS Field Tracker requires device location to function. Please turn on Location.")
+            .setCancelable(false)
+            .setPositiveButton("Turn On") { _, _ ->
+                isLocationPromptShowing = false
+                try {
+                    startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                } catch (_: Exception) {}
+            }
+            .setNegativeButton("No thanks") { _, _ ->
+                isLocationPromptShowing = false
+                Toast.makeText(this, "Location is required to use SGS Field Tracker. Closing app...", Toast.LENGTH_LONG).show()
+                finishAffinity()
+            }
+            .show()
     }
 
     private fun enableUserLocation() {
@@ -2156,13 +2233,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             .getBoolean("IS_CLOCKED_IN", false)
         updateClockInOutUi(isClockedIn)
 
-        // Check if GPS is enabled; prompt turn on if disabled
-        val locationManager = getSystemService(Context.LOCATION_SERVICE) as? LocationManager
-        val isGpsEnabled = locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true
-        val isNetworkEnabled = locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true
-        if (!isGpsEnabled && !isNetworkEnabled) {
-            checkLocationSettings()
-        }
+        // Mandatory Location Check on App Open/Resume: Prompt if off, finish if rejected
+        checkLocationEnabledOrPrompt()
 
         startLiveLocationTracking()
         syncAndRefreshServerData(showUserFeedback = false)
@@ -2174,13 +2246,15 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         SyncEngine.removeListener(syncListener)
         mainHandler.removeCallbacks(clockTicker)
         mainHandler.removeCallbacks(autoSyncTicker)
+        fallbackDialog?.dismiss()
+        fallbackDialog = null
         if (mainLocationCallback != null) {
             try {
                 mainFusedLocationClient.removeLocationUpdates(mainLocationCallback!!)
             } catch (_: Exception) {}
         }
         try {
-            unregisterReceiver(locationStateReceiver)
+            unregisterReceiver(foregroundLocationReceiver)
         } catch (e: Exception) {
             // Already unregistered
         }
