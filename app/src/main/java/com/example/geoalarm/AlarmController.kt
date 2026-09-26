@@ -1,5 +1,6 @@
 package com.example.geoalarm
 
+import android.annotation.SuppressLint
 import android.app.ActivityOptions
 import android.app.AlarmManager
 import android.app.NotificationChannel
@@ -23,6 +24,8 @@ import android.widget.Button
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
 
+// View and window manager lifecycle is explicitly managed and cleared in stopAlarm()
+@SuppressLint("StaticFieldLeak")
 object AlarmController {
 
     private const val TAG = "AlarmController"

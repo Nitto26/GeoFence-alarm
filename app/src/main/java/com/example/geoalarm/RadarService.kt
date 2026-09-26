@@ -57,7 +57,7 @@ class RadarService : Service() {
             .putString("DAILY_WORKED_DATE", todayYmd)
             .putLong("DAILY_WORKED_MILLIS", prevAccumulated + sessionElapsed)
             .putLong("CLOCK_IN_TIMESTAMP", 0L)
-            .commit()
+            .apply()
     }
 
     private fun startOrResumeDailyWorkTime(sharedPrefs: SharedPreferences, now: Long) {
@@ -69,7 +69,7 @@ class RadarService : Service() {
             editor.putLong("DAILY_WORKED_MILLIS", 0L)
         }
         editor.putLong("CLOCK_IN_TIMESTAMP", now)
-        editor.commit()
+        editor.apply()
     }
 
     companion object {
@@ -278,7 +278,7 @@ class RadarService : Service() {
                             .putBoolean("IS_CLOCKED_IN", true)
                             .putBoolean("IS_SYSTEM_ARMED", true)
                             .putString("ACTIVE_JOB_ID", jobId)
-                            .commit()
+                            .apply()
 
                         updateForegroundNotification()
                         WorkNotificationManager.showClockInNotification(this, jobId, isAuto = true)
@@ -375,7 +375,7 @@ class RadarService : Service() {
                     val formattedDuration = if (dur > 0L) {
                         val h = dur / 3600000
                         val m = (dur % 3600000) / 60000
-                        String.format("%02dh %02dm", h, m)
+                        String.format(Locale.US, "%02dh %02dm", h, m)
                     } else ""
 
                     pauseAndAccumulateDailyWorkTime(sharedPrefs)
@@ -383,7 +383,7 @@ class RadarService : Service() {
                     sharedPrefs.edit()
                         .putBoolean("IS_CLOCKED_IN", false)
                         .putBoolean("IS_SYSTEM_ARMED", false)
-                        .commit()
+                        .apply()
 
                     updateForegroundNotification()
                     WorkNotificationManager.showClockOutNotification(this, activeJobId, formattedDuration)
@@ -420,7 +420,7 @@ class RadarService : Service() {
                             .putBoolean("IS_CLOCKED_IN", true)
                             .putBoolean("IS_SYSTEM_ARMED", true)
                             .putString("ACTIVE_JOB_ID", primaryJobId)
-                            .commit()
+                            .apply()
 
                         updateForegroundNotification()
                         WorkNotificationManager.showClockInNotification(this, primaryJobId, isAuto = true)

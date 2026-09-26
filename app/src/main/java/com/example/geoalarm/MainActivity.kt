@@ -222,12 +222,12 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     val hours = totalWorked / 3600000
                     val minutes = (totalWorked % 3600000) / 60000
                     val seconds = (totalWorked % 60000) / 1000
-                    tvTimer.text = String.format("%02dh %02dm %02ds", hours, minutes, seconds)
+                    tvTimer.text = String.format(Locale.US, "%02dh %02dm %02ds", hours, minutes, seconds)
                 } else {
                     val hours = accumulated / 3600000
                     val minutes = (accumulated % 3600000) / 60000
                     val seconds = (accumulated % 60000) / 1000
-                    tvTimer.text = String.format("%02dh %02dm %02ds (Paused)", hours, minutes, seconds)
+                    tvTimer.text = String.format(Locale.US, "%02dh %02dm %02ds (Paused)", hours, minutes, seconds)
                 }
             }
 
@@ -1058,7 +1058,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             val formattedDuration = if (dur > 0L) {
                 val h = dur / 3600000
                 val m = (dur % 3600000) / 60000
-                String.format("%02dh %02dm", h, m)
+                String.format(Locale.US, "%02dh %02dm", h, m)
             } else ""
 
             pauseAndAccumulateDailyWorkTime(sharedPrefs)
@@ -1922,7 +1922,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     private fun checkOverlayAndAlarmPermissions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+        if (!Settings.canDrawOverlays(this)) {
             AlertDialog.Builder(this)
                 .setTitle("Permission Needed: Display Over Other Apps")
                 .setMessage("Enable display over other apps for lock screen alerts.")
@@ -2165,7 +2165,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     val formattedDuration = if (dur > 0L) {
                         val h = dur / 3600000
                         val m = (dur % 3600000) / 60000
-                        String.format("%02dh %02dm", h, m)
+                        String.format(Locale.US, "%02dh %02dm", h, m)
                     } else ""
 
                     pauseAndAccumulateDailyWorkTime(sharedPrefs)

@@ -9,6 +9,7 @@
     android:elevation="8dp"
     android:gravity="center_vertical"
     android:orientation="horizontal"
+    android:baselineAligned="false"
     android:weightSum="4">
 
     <!-- Tab 1: Home -->

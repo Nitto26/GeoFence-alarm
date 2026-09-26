@@ -125,15 +125,11 @@ object ShiftAlarmScheduler {
                 context,
                 REQUEST_CODE_SHIFT_ALARM,
                 intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, nextAlarmMillis, pendingIntent)
-                } else {
-                    alarmManager.setExact(AlarmManager.RTC_WAKEUP, nextAlarmMillis, pendingIntent)
-                }
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, nextAlarmMillis, pendingIntent)
                 val formattedTime = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(nextAlarmMillis))
                 Log.d(TAG, "✓ Scheduled Offline Shift Start Alarm for $nextAlarmJobName at $formattedTime")
             } catch (e: SecurityException) {
