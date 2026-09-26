@@ -57,31 +57,31 @@
             android:launchMode="singleTask"
             android:theme="@style/Theme.MaterialComponents.DayNight.NoActionBar" />
 
-        <!-- Geofence Listener -->
+        <!-- Geofence Listener (Private to app process) -->
         <receiver
             android:name=".GeofenceBroadcastReceiver"
             android:enabled="true"
-            android:exported="true" />
+            android:exported="false" />
 
-        <!-- Location State Listener (Sabotage Alarm) -->
+        <!-- Location State Listener (Private to app process, registered dynamically) -->
         <receiver
             android:name=".LocationStateReceiver"
             android:enabled="true"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.location.PROVIDERS_CHANGED" />
-                <action android:name="android.location.MODE_CHANGED" />
-            </intent-filter>
-        </receiver>
+            android:exported="false" />
 
-        <!-- Offline Shift Start Alarm Receiver -->
+        <!-- Offline Shift Start Alarm Receiver (Private to app process, triggered via AlarmManager) -->
         <receiver
             android:name=".ShiftAlarmReceiver"
+            android:enabled="true"
+            android:exported="false" />
+
+        <!-- Device Boot Completed Receiver (Protected System Broadcast) -->
+        <receiver
+            android:name=".BootReceiver"
             android:enabled="true"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="com.example.geoalarm.ACTION_SHIFT_START_ALARM" />
             </intent-filter>
         </receiver>
 
