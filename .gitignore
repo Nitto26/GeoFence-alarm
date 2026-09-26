@@ -1,21 +1,53 @@
-*.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
+# Built application files
+*.apk
+*.aar
+*.aab
+*.ap_
+*.dex
+
+# Gradle and Build outputs
+.gradle/
+build/
+**/build/
 /build
+app/build/
+**/reports/
+**/lint-results*
+**/test-results/
+**/androidTest-results/
+**/intermediates/
+**/generated/
+lint-baseline.xml
+
+# Local configuration & secrets
+local.properties
+/local.properties
+*.keystore
+*.jks
+
+# Android Studio / IntelliJ / VS Code
+*.iml
+.idea/
+/.idea/
+.vscode/
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Logs, Databases, and temporary files
+*.log
+*.tmp
+*.bak
+*.swp
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+sgs app.txt
+
+# Captures and Native Build
 /captures
 .externalNativeBuild
 .cxx
-local.properties
-sgs app.txt
-*.db
-*.sqlite3
-*.log
-*.apk
-
