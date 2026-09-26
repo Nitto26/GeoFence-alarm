@@ -1,8 +1,10 @@
 package com.example.geoalarm
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import java.util.UUID
 import android.text.method.HideReturnsTransformationMethod
 import android.text.method.PasswordTransformationMethod
 import android.util.Log
@@ -116,10 +118,7 @@ class LoginActivity : AppCompatActivity() {
                 try {
                     Log.d(TAG, "Authenticating worker: $username against ${ApiClient.getBaseUrl()}")
                     
-                    val androidId = android.provider.Settings.Secure.getString(
-                        contentResolver,
-                        android.provider.Settings.Secure.ANDROID_ID
-                    ) ?: "dev_${username}"
+                    val androidId = getOrCreateInstallationDeviceId(username)
                     val devName = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
 
                     val loginRequest = MobileLoginRequest(
@@ -255,5 +254,22 @@ class LoginActivity : AppCompatActivity() {
         }
         startActivity(intent)
         finish()
+    }
+
+    @SuppressLint("HardwareIds")
+    private fun getOrCreateInstallationDeviceId(fallbackUser: String): String {
+        val prefs = getSharedPreferences("AppSecurityPrefs", Context.MODE_PRIVATE)
+        var deviceId = prefs.getString("DEVICE_INSTALLATION_ID", null)
+        if (deviceId.isNullOrEmpty()) {
+            val hardwareId = try {
+                android.provider.Settings.Secure.getString(
+                    contentResolver,
+                    android.provider.Settings.Secure.ANDROID_ID
+                )
+            } catch (_: Exception) { null }
+            deviceId = hardwareId ?: UUID.randomUUID().toString()
+            prefs.edit().putString("DEVICE_INSTALLATION_ID", deviceId).apply()
+        }
+        return deviceId ?: "dev_${fallbackUser}"
     }
 }

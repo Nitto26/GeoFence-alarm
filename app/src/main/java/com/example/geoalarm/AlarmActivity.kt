@@ -15,6 +15,7 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 
@@ -50,6 +51,13 @@ class AlarmActivity : AppCompatActivity() {
         )
 
         setContentView(R.layout.activity_alarm)
+
+        // Disable back button so the worker cannot bypass the warning alarm screen
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                // Do nothing to prevent dismissing when location is off
+            }
+        })
 
         isSabotageMode = intent.getBooleanExtra("IS_SABOTAGE", false)
 
@@ -89,12 +97,6 @@ class AlarmActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         checkLocationStatusAndDismissIfResolved()
-    }
-
-    // Disable back button so the worker cannot bypass the warning alarm screen
-    @Suppress("DEPRECATION")
-    override fun onBackPressed() {
-        // Do nothing to prevent dismissing when location is off
     }
 
     private fun isLocationServiceOn(): Boolean {
