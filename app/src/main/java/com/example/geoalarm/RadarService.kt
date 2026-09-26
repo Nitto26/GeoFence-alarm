@@ -206,6 +206,20 @@ class RadarService : Service() {
                 val accommodation = loadCachedAccommodation()
 
                 for (location in locationResult.locations) {
+                    if (GeofenceHelper.isLocationSpoofed(location)) {
+                        Log.e(TAG, "🚨 Mock location detected in RadarService! Dropping GPS ping.")
+                        WorkNotificationManager.showMockLocationAlertNotification(this@RadarService)
+                        EventReporter.reportEvent(
+                            context = this@RadarService,
+                            eventType = "mock_location_detected",
+                            jobId = currentJobId,
+                            latitude = location.latitude,
+                            longitude = location.longitude
+                        )
+                        EventReporter.addLocalLog("Security Violation: Mock GPS fix dropped in RadarService.")
+                        continue
+                    }
+
                     if (!GeofenceHelper.isLocationAccurate(location)) {
                         Log.d(TAG, "RadarService: Skipping inaccurate GPS ping (${location.accuracy}m)")
                         continue

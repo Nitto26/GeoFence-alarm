@@ -20,6 +20,7 @@ object WorkNotificationManager {
     const val NOTIF_ID_GEOFENCE_ENTRY = 2003
     const val NOTIF_ID_GEOFENCE_EXIT = 2004
     const val NOTIF_ID_SHIFT_SCHEDULE = 2005
+    const val NOTIF_ID_MOCK_LOCATION = 2006
 
     // Deduplication tracker: prevents repeating identical notifications on periodic pings
     @Volatile
@@ -107,6 +108,17 @@ object WorkNotificationManager {
     fun showShiftScheduleNotification(context: Context, jobName: String, timeText: String) {
         val title = "Shift Started: $jobName"
         showNotification(context, NOTIF_ID_SHIFT_SCHEDULE, title, timeText)
+    }
+
+    @Synchronized
+    fun showMockLocationAlertNotification(context: Context) {
+        val key = "MOCK_LOCATION"
+        if (lastNotifiedStateKey == key) return
+        lastNotifiedStateKey = key
+
+        val title = "⚠️ Fake GPS / Mock Location Detected"
+        val message = "Mock GPS providers are strictly prohibited. Location attendance rejected."
+        showNotification(context, NOTIF_ID_MOCK_LOCATION, title, message)
     }
 
     fun resetNotificationState() {

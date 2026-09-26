@@ -6,6 +6,7 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.location.Location
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -21,6 +22,18 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
         private const val NOTIFICATION_ID_ENTRY = 1001
         private const val NOTIFICATION_ID_EXIT = 1002
         const val ACTION_WORK_STATE_CHANGED = "com.example.geoalarm.ACTION_WORK_STATE_CHANGED"
+    }
+
+    /**
+     * Inspects the hardware mock flag to verify if a location fix is spoofed.
+     */
+    fun isLocationSpoofed(location: Location): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            location.isMock
+        } else {
+            @Suppress("DEPRECATION")
+            location.isFromMockProvider
+        }
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -41,6 +54,20 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
         val transition = geofencingEvent.geofenceTransition
         val triggeringGeofences = geofencingEvent.triggeringGeofences ?: emptyList()
         val triggeringLocation = geofencingEvent.triggeringLocation
+
+        if (triggeringLocation != null && isLocationSpoofed(triggeringLocation)) {
+            Log.e(TAG, "🚨 Mock/Spoofed location detected for geofence! Dropping event.")
+            WorkNotificationManager.showMockLocationAlertNotification(context)
+            EventReporter.reportEvent(
+                context = context,
+                eventType = "mock_location_detected",
+                jobId = triggeringGeofences.firstOrNull()?.requestId,
+                latitude = triggeringLocation.latitude,
+                longitude = triggeringLocation.longitude
+            )
+            EventReporter.addLocalLog("Security Violation: Mock GPS spoofing detected (${triggeringLocation.latitude}, ${triggeringLocation.longitude}). Attendance rejected.")
+            return
+        }
 
         val geoPrefs = context.getSharedPreferences("GeoPrefs", Context.MODE_PRIVATE)
         val lat = triggeringLocation?.latitude ?: 0.0
