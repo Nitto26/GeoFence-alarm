@@ -152,6 +152,7 @@ class LoginActivity : AppCompatActivity() {
                                     .putString("WORKER_NAME", workerName)
                                     .putString("WORKER_DESIGNATION", workerDesignation)
                                     .putString("WORKER_PHONE", workerPhone)
+                                    .putString("WORKER_TYPE", worker.workerType ?: "")
                                     .apply()
 
                                 val acc = body.accommodation

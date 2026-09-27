@@ -392,6 +392,15 @@ class RadarService : Service() {
             if (isInsideStay) {
                 if (!wasInsideStay) {
                     sharedPrefs.edit().putBoolean("WAS_INSIDE_STAY", true).apply()
+                    val accId = accommodation.name?.takeIf { it.isNotBlank() } ?: "Accommodation"
+                    EventReporter.reportEvent(
+                        context = this,
+                        eventType = "accommodation_entry",
+                        jobId = accId,
+                        latitude = lat,
+                        longitude = lng
+                    )
+                    EventReporter.addLocalLog("Arrived at Accommodation: $accId")
                 }
 
                 // Returning to Accommodation after shift -> AUTO CLOCK OUT
@@ -444,40 +453,61 @@ class RadarService : Service() {
             // Outside Stay Departure: Must be > 60m away from accommodation before triggering Stay Departure
             if (wasInsideStay && distToStay > 60f) {
                 sharedPrefs.edit().putBoolean("WAS_INSIDE_STAY", false).apply()
+                val accId = accommodation.name?.takeIf { it.isNotBlank() } ?: "Accommodation"
+                EventReporter.reportEvent(
+                    context = this,
+                    eventType = "accommodation_exit",
+                    jobId = accId,
+                    latitude = lat,
+                    longitude = lng
+                )
+                EventReporter.addLocalLog("Departed Accommodation: $accId")
 
-                if (!isClockedIn) {
-                    if (ShiftScheduleHelper.isAnyJobWithinShiftHours(jobs)) {
-                        val now = System.currentTimeMillis()
-                        val primaryJobId = jobs.firstOrNull()?.jobId ?: "Assigned Worksite"
-                        startOrResumeDailyWorkTime(sharedPrefs, now)
-                        sharedPrefs.edit()
-                            .putBoolean("IS_CLOCKED_IN", true)
-                            .putBoolean("IS_SYSTEM_ARMED", true)
-                            .putString("ACTIVE_JOB_ID", primaryJobId)
-                            .apply()
+                val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+                val workerType = userPrefs.getString("WORKER_TYPE", "") ?: ""
+                val workerDesig = userPrefs.getString("WORKER_DESIGNATION", "") ?: ""
+                val isDriver = workerType.contains("driver", ignoreCase = true) || workerDesig.contains("driver", ignoreCase = true)
 
-                        updateForegroundNotification()
-                        WorkNotificationManager.showClockInNotification(this, primaryJobId, isAuto = true)
+                if (isDriver) {
+                    // Driver: Payable hours start on departure from accommodation (Item 16)
+                    if (!isClockedIn) {
+                        if (ShiftScheduleHelper.isAnyJobWithinShiftHours(jobs)) {
+                            val now = System.currentTimeMillis()
+                            val primaryJobId = jobs.firstOrNull()?.jobId ?: "Assigned Worksite"
+                            startOrResumeDailyWorkTime(sharedPrefs, now)
+                            sharedPrefs.edit()
+                                .putBoolean("IS_CLOCKED_IN", true)
+                                .putBoolean("IS_SYSTEM_ARMED", true)
+                                .putString("ACTIVE_JOB_ID", primaryJobId)
+                                .apply()
 
-                        EventReporter.reportEvent(
-                            context = this,
-                            eventType = "clock_in",
-                            jobId = primaryJobId,
-                            latitude = lat,
-                            longitude = lng
-                        )
-                        EventReporter.addLocalLog("Shift Auto-Started: Exited accommodation. Payroll timer active.")
+                            updateForegroundNotification()
+                            WorkNotificationManager.showClockInNotification(this, primaryJobId, isAuto = true)
 
-                        val stateIntent = Intent(GeofenceBroadcastReceiver.ACTION_WORK_STATE_CHANGED).apply {
-                            putExtra("IS_CLOCKED_IN", true)
-                            putExtra("CLOCK_IN_TIMESTAMP", now)
-                            putExtra("ACTIVE_JOB_ID", primaryJobId)
+                            EventReporter.reportEvent(
+                                context = this,
+                                eventType = "clock_in",
+                                jobId = primaryJobId,
+                                latitude = lat,
+                                longitude = lng
+                            )
+                            EventReporter.addLocalLog("Shift Auto-Started (Driver): Exited accommodation. Payroll timer active.")
+
+                            val stateIntent = Intent(GeofenceBroadcastReceiver.ACTION_WORK_STATE_CHANGED).apply {
+                                putExtra("IS_CLOCKED_IN", true)
+                                putExtra("CLOCK_IN_TIMESTAMP", now)
+                                putExtra("ACTIVE_JOB_ID", primaryJobId)
+                                setPackage(packageName)
+                            }
+                            sendBroadcast(stateIntent)
+                            return
+                        } else {
+                            Log.d(TAG, "Driver stay departure detected, but current time is outside shift schedule. Auto clock-in skipped.")
                         }
-                        sendBroadcast(stateIntent)
-                        return
-                    } else {
-                        Log.d(TAG, "Stay departure detected, but current time is outside shift schedule. Auto clock-in skipped.")
                     }
+                } else {
+                    // Regular worker: Payable hours start on entering worksite, NOT on leaving accommodation (Item 15)
+                    Log.d(TAG, "Regular worker departed accommodation. Logged movement event. Payroll will start upon worksite entry.")
                 }
             }
         }
