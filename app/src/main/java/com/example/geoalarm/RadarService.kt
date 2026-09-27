@@ -121,6 +121,9 @@ class RadarService : Service() {
         try {
             updateForegroundNotification()
             startActiveRadar()
+            if (intent?.action == "com.example.geoalarm.ACTION_LOCATION_RESTORED") {
+                sampleLocationImmediately()
+            }
         } catch (e: SecurityException) {
             Log.e(TAG, "SecurityException starting foreground service: ${e.message}")
             stopSelf()
@@ -251,9 +254,26 @@ class RadarService : Service() {
             try {
                 fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper())
                 Log.d(TAG, "RadarService location updates active (battery-optimized adaptive interval, high accuracy)")
+                sampleLocationImmediately()
             } catch (e: SecurityException) {
                 Log.e(TAG, "SecurityException requesting location updates: ${e.message}")
             }
+        }
+    }
+
+    private fun sampleLocationImmediately() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return
+        try {
+            fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null).addOnSuccessListener { location ->
+                if (location != null && !GeofenceHelper.isLocationSpoofed(location) && GeofenceHelper.isLocationAccurate(location)) {
+                    Log.d(TAG, "Sampled immediate location in RadarService: (${location.latitude}, ${location.longitude})")
+                    val jobs = loadCachedJobs()
+                    val accommodation = loadCachedAccommodation()
+                    processLocationAgainstJobsAndStay(location.latitude, location.longitude, jobs, accommodation)
+                }
+            }
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Error sampling immediate location: ${e.message}")
         }
     }
 
@@ -475,13 +495,7 @@ class RadarService : Service() {
     }
 
     private fun loadCachedAccommodation(): AccommodationItem? {
-        val geoPrefs = getSharedPreferences("GeoPrefs", Context.MODE_PRIVATE)
-        val json = geoPrefs.getString("CACHED_ACCOMMODATION_JSON", null) ?: return null
-        return try {
-            Gson().fromJson(json, AccommodationItem::class.java)
-        } catch (e: Exception) {
-            null
-        }
+        return GeofenceHelper.getOrResolveAccommodation(this)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

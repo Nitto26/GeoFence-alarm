@@ -44,16 +44,22 @@ object EventReporter {
         eventType: String,
         jobId: String? = null,
         latitude: Double = 0.0,
-        longitude: Double = 0.0
+        longitude: Double = 0.0,
+        eventTimestamp: Long? = null
     ) {
         val now = System.currentTimeMillis()
         val normalizedJobId = jobId?.trim()?.ifEmpty { null }
+        val sharedPrefs = context.getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
+
+        val persistedInsideJobId = sharedPrefs.getString("CURRENT_INSIDE_JOB_ID", null) ?: sharedPrefs.getString("ACTIVE_JOB_ID", null)
+        val effectiveInsideJobId = currentInsideJobId ?: persistedInsideJobId
+        val effectiveLastEventType = lastNonPingEventType ?: sharedPrefs.getString("LAST_NON_PING_EVENT_TYPE", null)
 
         // STRICT STATE TRANSITION VALIDATION & DEDUPLICATION:
         if (eventType != "ping") {
-            // Rule 1: Cannot EXIT if not currently inside a worksite OR if last reported event was already EXIT
+            // Rule 1: Cannot EXIT if already outside worksite AND last event was already exit
             if (eventType == "exit") {
-                if (currentInsideJobId == null || lastNonPingEventType == "exit") {
+                if (effectiveInsideJobId == null && effectiveLastEventType == "exit") {
                     Log.d(TAG, "Suppressed redundant EXIT event: already outside worksite.")
                     return
                 }
@@ -61,23 +67,23 @@ object EventReporter {
 
             // Rule 2: Cannot ENTRY if already recorded inside this exact worksite
             if (eventType == "entry") {
-                if (currentInsideJobId == normalizedJobId && lastNonPingEventType == "entry") {
+                if (effectiveInsideJobId == normalizedJobId && effectiveLastEventType == "entry") {
                     Log.d(TAG, "Suppressed redundant ENTRY event: already inside $normalizedJobId.")
                     return
                 }
             }
 
-            // Rule 3: Debounce identical non-ping events within 20 seconds
+            // Rule 3: Debounce identical non-ping events within 15 seconds
             val eventKey = "$eventType-${normalizedJobId ?: ""}"
             val lastTime = lastReportedEvents[eventKey] ?: 0L
-            if (now - lastTime < 20_000L) {
-                Log.d(TAG, "Suppressed rapid duplicate event: $eventKey within 20s")
+            if (now - lastTime < 15_000L) {
+                Log.d(TAG, "Suppressed rapid duplicate event: $eventKey within 15s")
                 return
             }
             lastReportedEvents[eventKey] = now
         }
 
-        // Update state tracking
+        // Update state tracking in memory and persist across process kills
         if (eventType != "ping") {
             lastNonPingEventType = eventType
             when (eventType) {
@@ -86,9 +92,15 @@ object EventReporter {
                 "accommodation_entry" -> currentInsideJobId = "accommodation"
                 "accommodation_exit" -> currentInsideJobId = null
             }
+
+            sharedPrefs.edit()
+                .putString("CURRENT_INSIDE_JOB_ID", currentInsideJobId)
+                .putString("LAST_NON_PING_EVENT_TYPE", lastNonPingEventType)
+                .apply()
         }
 
-        val isoTimestamp = getIsoTimestamp()
+        val eventDate = if (eventTimestamp != null && eventTimestamp > 0L) Date(eventTimestamp) else Date()
+        val isoTimestamp = getIsoTimestamp(eventDate)
         val displayJob = normalizedJobId ?: "Device"
         addLocalLog("Event recorded: $eventType ($displayJob)")
 
@@ -105,7 +117,7 @@ object EventReporter {
                 isSynced = false,
                 isOffline = isCurrentlyOffline
             )
-            Log.d(TAG, "Persisted event $recordId locally ($eventType, offline=$isCurrentlyOffline). Triggering auto-sync...")
+            Log.d(TAG, "Persisted event $recordId locally ($eventType, offline=$isCurrentlyOffline, ts=$isoTimestamp). Triggering auto-sync...")
 
             // 2. Trigger auto-sync engine (flushes immediately if online, holds safely if offline)
             SyncEngine.triggerSync(context)
@@ -115,9 +127,9 @@ object EventReporter {
         }
     }
 
-    private fun getIsoTimestamp(): String {
+    private fun getIsoTimestamp(date: Date = Date()): String {
         val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US)
         sdf.timeZone = TimeZone.getDefault()
-        return sdf.format(Date())
+        return sdf.format(date)
     }
 }

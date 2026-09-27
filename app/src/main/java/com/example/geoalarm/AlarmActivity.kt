@@ -18,10 +18,23 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import com.google.android.gms.common.api.ResolvableApiException
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.LocationSettingsRequest
+import com.google.android.gms.location.Priority
 
 class AlarmActivity : AppCompatActivity() {
 
     private var isSabotageMode = false
+
+    private val resolutionForResult = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        if (result.resultCode == RESULT_OK) {
+            checkLocationStatusAndDismissIfResolved()
+        }
+    }
 
     private val locationStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -70,12 +83,14 @@ class AlarmActivity : AppCompatActivity() {
         tvSubtext.text = "Worker Tracker needs your location to automatically track your attendance and keep you safe."
 
         btnTurnOnLocation.setOnClickListener {
-            val settingsIntent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
-            startActivity(settingsIntent)
+            requestEnableLocation()
         }
 
         // Trigger alarm siren if not already active
         AlarmController.triggerAlarm(this, isSabotageMode)
+
+        // Automatically prompt with one-tap location dialog
+        requestEnableLocation()
 
         // Listen for location being restored
         try {
@@ -94,6 +109,31 @@ class AlarmActivity : AppCompatActivity() {
         }
     }
 
+    private fun requestEnableLocation() {
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 10000).build()
+        val builder = LocationSettingsRequest.Builder()
+            .addLocationRequest(locationRequest)
+            .setAlwaysShow(true)
+        val client = LocationServices.getSettingsClient(this)
+
+        client.checkLocationSettings(builder.build()).addOnSuccessListener {
+            checkLocationStatusAndDismissIfResolved()
+        }.addOnFailureListener { exception ->
+            if (exception is ResolvableApiException) {
+                try {
+                    val intentSenderRequest = IntentSenderRequest.Builder(exception.resolution).build()
+                    resolutionForResult.launch(intentSenderRequest)
+                } catch (sendEx: Exception) {
+                    val settingsIntent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+                    startActivity(settingsIntent)
+                }
+            } else {
+                val settingsIntent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+                startActivity(settingsIntent)
+            }
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         checkLocationStatusAndDismissIfResolved()
@@ -106,8 +146,16 @@ class AlarmActivity : AppCompatActivity() {
     }
 
     private fun checkLocationStatusAndDismissIfResolved() {
+        val sharedPrefs = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
+        val wasInsideStay = sharedPrefs.getBoolean("WAS_INSIDE_STAY", false)
+        val isClockedIn = sharedPrefs.getBoolean("IS_CLOCKED_IN", false)
+
         if (isLocationServiceOn()) {
             Toast.makeText(this, "✓ Location restored! Resuming tracking...", Toast.LENGTH_LONG).show()
+            AlarmController.stopAlarm(this)
+            finish()
+        } else if (wasInsideStay || !isClockedIn) {
+            Log.d("AlarmActivity", "Worker at accommodation or clocked out. Dismissing alarm.")
             AlarmController.stopAlarm(this)
             finish()
         }

@@ -1,9 +1,12 @@
 package com.example.geoalarm
 
+import android.content.Context
 import android.location.Location
 import com.example.geoalarm.network.AccommodationItem
 import com.example.geoalarm.network.JobItem
 import com.example.geoalarm.network.LocationCoordinate
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 
 object GeofenceHelper {
 
@@ -159,17 +162,18 @@ object GeofenceHelper {
     }
 
     /**
-     * Determines whether (lat, lng) is strictly within Accommodation/Stay.
-     * Uses tight polygon containment (10m buffer) or 20m radius if point.
+     * Determines whether (lat, lng) is within Accommodation/Stay.
+     * Uses 25m perimeter buffer for polygons or 60m radius for points to accommodate
+     * residential buildings and indoor GPS drift.
      */
     fun isCoordinateInsideAccommodation(lat: Double, lng: Double, acc: AccommodationItem?): Boolean {
         if (acc == null || acc.location.isEmpty()) return false
         val points = acc.location
         return if (points.size >= 3) {
             if (isPointInPolygon(lat, lng, points)) return true
-            minDistanceToPolygonPerimeter(lat, lng, points) <= 10f
+            minDistanceToPolygonPerimeter(lat, lng, points) <= 25f
         } else {
-            minDistanceToPoints(lat, lng, points) <= 20f
+            minDistanceToPoints(lat, lng, points) <= 60f
         }
     }
 
@@ -179,5 +183,38 @@ object GeofenceHelper {
     fun getDistanceToAccommodation(lat: Double, lng: Double, acc: AccommodationItem?): Float {
         if (acc == null || acc.location.isEmpty()) return Float.MAX_VALUE
         return minDistanceToPolygonPerimeter(lat, lng, acc.location)
+    }
+
+    /**
+     * Resolves the worker's assigned accommodation from SharedPreferences cache,
+     * with automatic fallback to any accommodation / starting point job configured in CACHED_JOBS_JSON.
+     */
+    fun getOrResolveAccommodation(context: Context): AccommodationItem? {
+        val geoPrefs = context.getSharedPreferences("GeoPrefs", Context.MODE_PRIVATE)
+        val json = geoPrefs.getString("CACHED_ACCOMMODATION_JSON", null)
+        if (json != null) {
+            try {
+                val acc = Gson().fromJson(json, AccommodationItem::class.java)
+                if (acc != null && acc.location.isNotEmpty()) return acc
+            } catch (_: Exception) {}
+        }
+
+        // Fallback: Check if accommodation was sent as an item inside jobs
+        val jobsJson = geoPrefs.getString("CACHED_JOBS_JSON", null) ?: return null
+        return try {
+            val type = object : TypeToken<List<JobItem>>() {}.type
+            val jobs: List<JobItem> = Gson().fromJson(jobsJson, type) ?: emptyList()
+            val accJob = jobs.find { it.siteType.equals("accommodation", ignoreCase = true) || it.isStartingPoint == true }
+            if (accJob != null && accJob.location.isNotEmpty()) {
+                AccommodationItem(
+                    id = accJob.jobId,
+                    name = accJob.jobTitle ?: "Assigned Accommodation",
+                    location = accJob.location,
+                    address = accJob.address ?: ""
+                )
+            } else null
+        } catch (_: Exception) {
+            null
+        }
     }
 }

@@ -516,7 +516,18 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 
                 if (response.isSuccessful) {
                     val jobs = response.body()?.jobs ?: emptyList()
-                    val accommodation = response.body()?.accommodation
+                    var accommodation = response.body()?.accommodation
+                    if (accommodation == null) {
+                        val accJob = jobs.find { it.siteType.equals("accommodation", ignoreCase = true) || it.isStartingPoint == true }
+                        if (accJob != null && accJob.location.isNotEmpty()) {
+                            accommodation = com.example.geoalarm.network.AccommodationItem(
+                                id = accJob.jobId,
+                                name = accJob.jobTitle ?: "Assigned Accommodation",
+                                location = accJob.location,
+                                address = accJob.address ?: ""
+                            )
+                        }
+                    }
                     liveJobs = jobs
                     liveAccommodation = accommodation
 
@@ -1073,11 +1084,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             // 1. Stop background RadarService
             stopService(Intent(this, RadarService::class.java))
 
-            // 2. Disarm & remove Geofences
-            try {
-                geofencingClient.removeGeofences(geofencePendingIntent)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error removing geofences: ${e.message}")
+            // 2. Keep Geofences actively armed for automatic next-shift worksite entry
+            if (hasLocationPermission() && liveJobs.isNotEmpty()) {
+                armAllJobGeofences(liveJobs)
             }
 
             // 3. Stop any ringing alarms

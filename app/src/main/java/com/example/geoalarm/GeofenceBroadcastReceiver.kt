@@ -117,20 +117,24 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
 
                     Log.d(TAG, "✓ Work time & Payroll timer automatically started at $now")
 
+                    val eventTime = if (triggeringLocation != null && triggeringLocation.time > 0L) triggeringLocation.time else now
+
                     // 2. Dispatch events to Backend Telemetry (Cloud & Local SQLite)
                     EventReporter.reportEvent(
                         context = context,
                         eventType = "clock_in",
                         jobId = jobId,
                         latitude = lat,
-                        longitude = lng
+                        longitude = lng,
+                        eventTimestamp = eventTime
                     )
                     EventReporter.reportEvent(
                         context = context,
                         eventType = "entry",
                         jobId = jobId,
                         latitude = lat,
-                        longitude = lng
+                        longitude = lng,
+                        eventTimestamp = eventTime
                     )
                     EventReporter.addLocalLog("✓ Work time started ($jobId). Payroll timer running.")
 
@@ -155,13 +159,15 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                     context.sendBroadcast(stateIntent)
 
                 } else {
+                    val eventTime = if (triggeringLocation != null && triggeringLocation.time > 0L) triggeringLocation.time else now
                     // Worker was already clocked in, log entry event
                     EventReporter.reportEvent(
                         context = context,
                         eventType = "entry",
                         jobId = jobId,
                         latitude = lat,
-                        longitude = lng
+                        longitude = lng,
+                        eventTimestamp = eventTime
                     )
                     EventReporter.addLocalLog("Worksite Entry: Inside $jobId.")
 
@@ -170,14 +176,17 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
 
             } else if (transition == Geofence.GEOFENCE_TRANSITION_EXIT) {
                 Log.d(TAG, "🟡 Worksite EXIT detected for $jobId at ($lat, $lng)")
+                val eventTime = if (triggeringLocation != null && triggeringLocation.time > 0L) triggeringLocation.time else System.currentTimeMillis()
 
-                if (isAlreadyClockedIn) {
+                val activeJobId = sharedPrefs.getString("ACTIVE_JOB_ID", null)
+                if (isAlreadyClockedIn || activeJobId == jobId) {
                     EventReporter.reportEvent(
                         context = context,
                         eventType = "exit",
                         jobId = jobId,
                         latitude = lat,
-                        longitude = lng
+                        longitude = lng,
+                        eventTimestamp = eventTime
                     )
                     EventReporter.addLocalLog("⚠️ Worksite boundary exit ($jobId)")
 
