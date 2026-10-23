@@ -161,9 +161,14 @@ class LocalEventDatabaseHelper private constructor(context: Context) :
         val db = writableDatabase
         val nowStr = getFormattedDate(System.currentTimeMillis())
 
-        val inClause = ids.joinToString(",")
-        val query = "UPDATE $TABLE_EVENTS SET $COL_IS_SYNCED = 1, $COL_SYNCED_AT = '$nowStr' WHERE $COL_ID IN ($inClause)"
-        db.execSQL(query)
+        val placeholders = ids.joinToString(",") { "?" }
+        val query = "UPDATE $TABLE_EVENTS SET $COL_IS_SYNCED = 1, $COL_SYNCED_AT = ? WHERE $COL_ID IN ($placeholders)"
+        val bindArgs = ArrayList<Any>().apply {
+            add(nowStr)
+            addAll(ids)
+        }.toTypedArray()
+
+        db.execSQL(query, bindArgs)
         Log.d(TAG, "Marked ${ids.size} events as synced in local DB.")
     }
 

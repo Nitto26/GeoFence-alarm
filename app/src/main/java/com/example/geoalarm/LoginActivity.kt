@@ -30,6 +30,10 @@ class LoginActivity : AppCompatActivity() {
     private val TAG = "LoginActivity"
     private var isPasswordVisible = false
 
+    // Brute-force rate limiting: 5 consecutive failures triggers 30-second lockout
+    private var failedLoginAttempts = 0
+    private var lockoutUntilTimestamp = 0L
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_login)
@@ -51,7 +55,7 @@ class LoginActivity : AppCompatActivity() {
             input.setText(ApiClient.getBaseUrl())
             AlertDialog.Builder(this)
                 .setTitle("Cloud Backend Server URL")
-                .setMessage("Active Render Server. You can reset to default or specify a new backend URL.")
+                .setMessage("Active Render Server. Must use secure HTTPS.")
                 .setView(input)
                 .setPositiveButton("Save & Switch") { _, _ ->
                     val newUrl = input.text.toString().trim()
@@ -59,7 +63,7 @@ class LoginActivity : AppCompatActivity() {
                         tvConnectionStatus?.text = "Server: ${ApiClient.getBaseUrl()}"
                         Toast.makeText(this, "Updated backend: ${ApiClient.getBaseUrl()}", Toast.LENGTH_LONG).show()
                     } else {
-                        Toast.makeText(this, "Invalid URL format", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "Invalid HTTPS URL format", Toast.LENGTH_SHORT).show()
                     }
                 }
                 .setNeutralButton("Reset Default") { _, _ ->
@@ -95,6 +99,14 @@ class LoginActivity : AppCompatActivity() {
 
         // Login Button
         btnLogin?.setOnClickListener {
+            // Check rate limiting lockout
+            val now = System.currentTimeMillis()
+            if (now < lockoutUntilTimestamp) {
+                val remainingSec = ((lockoutUntilTimestamp - now) / 1000) + 1
+                Toast.makeText(this, "Too many failed attempts. Please wait $remainingSec seconds.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
             val username = etUsername.text.toString().trim()
             val password = etPassword.text.toString().trim()
 
@@ -105,7 +117,7 @@ class LoginActivity : AppCompatActivity() {
             }
 
             if (password.isEmpty()) {
-                etPassword.error = "Please enter your password (default: password)"
+                etPassword.error = "Please enter your password"
                 etPassword.requestFocus()
                 return@setOnClickListener
             }
@@ -119,7 +131,9 @@ class LoginActivity : AppCompatActivity() {
                     Log.d(TAG, "Authenticating worker: $username against ${ApiClient.getBaseUrl()}")
                     
                     val androidId = getOrCreateInstallationDeviceId(username)
-                    val devName = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+                    val rawDevName = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+                    // Sanitize device name to prevent Stored XSS in web dashboard
+                    val devName = rawDevName.replace(Regex("[<>&\"'/]"), "").trim().take(50)
 
                     val loginRequest = MobileLoginRequest(
                         workerId = username,
@@ -141,6 +155,10 @@ class LoginActivity : AppCompatActivity() {
                             val jobs = body.jobs ?: emptyList()
 
                             if (worker != null) {
+                                // Reset rate limiter on successful authentication
+                                failedLoginAttempts = 0
+                                lockoutUntilTimestamp = 0L
+
                                 val workerId = worker.tallyId.ifEmpty { worker.id ?: username }
                                 val workerName = worker.name
                                 val workerDesignation = worker.designation ?: "Field Technician"
@@ -184,6 +202,14 @@ class LoginActivity : AppCompatActivity() {
                                 )
                             }
                         } else {
+                            // Record failed attempt for rate limiting
+                            failedLoginAttempts++
+                            if (failedLoginAttempts >= 5) {
+                                lockoutUntilTimestamp = System.currentTimeMillis() + 30_000L
+                                failedLoginAttempts = 0
+                                Toast.makeText(this@LoginActivity, "Too many failed login attempts. Locked for 30 seconds.", Toast.LENGTH_LONG).show()
+                            }
+
                             // Parse server error message from JSON errorBody
                             val statusCode = response.code()
                             var errorMsg = when (statusCode) {

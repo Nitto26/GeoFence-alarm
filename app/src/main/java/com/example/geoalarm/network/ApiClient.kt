@@ -43,7 +43,9 @@ object ApiClient {
         val trimmed = url.trim()
         if (trimmed.isEmpty()) return false
         var formatted = trimmed
-        if (!formatted.startsWith("http://") && !formatted.startsWith("https://")) {
+        if (formatted.startsWith("http://")) {
+            formatted = formatted.replaceFirst("http://", "https://")
+        } else if (!formatted.startsWith("https://")) {
             formatted = "https://$formatted"
         }
         if (!formatted.endsWith("/")) {
@@ -53,7 +55,7 @@ object ApiClient {
             val uri = URI.create(formatted)
             val host = uri.host
             Retrofit.Builder().baseUrl(formatted).build()
-            !host.isNullOrEmpty()
+            !host.isNullOrEmpty() && (uri.scheme == "https")
         } catch (e: Exception) {
             false
         }
@@ -62,7 +64,9 @@ object ApiClient {
     fun setBaseUrl(context: Context, newUrl: String): Boolean {
         var formattedUrl = newUrl.trim()
         if (formattedUrl.isEmpty()) return false
-        if (!formattedUrl.startsWith("http://") && !formattedUrl.startsWith("https://")) {
+        if (formattedUrl.startsWith("http://")) {
+            formattedUrl = formattedUrl.replaceFirst("http://", "https://")
+        } else if (!formattedUrl.startsWith("https://")) {
             formattedUrl = "https://$formattedUrl"
         }
         if (!formattedUrl.endsWith("/")) {
@@ -82,15 +86,23 @@ object ApiClient {
     }
 
     private fun buildRetrofit() {
+        // Redact request/response bodies from Logcat so passwords and tokens are never leaked
         val logging = HttpLoggingInterceptor().apply {
             level = if (com.example.geoalarm.BuildConfig.DEBUG) {
-                HttpLoggingInterceptor.Level.BODY
+                HttpLoggingInterceptor.Level.HEADERS
             } else {
-                HttpLoggingInterceptor.Level.BASIC
+                HttpLoggingInterceptor.Level.NONE
             }
         }
 
         val okHttpClient = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val request = chain.request().newBuilder()
+                    .addHeader("X-Requested-With", "XMLHttpRequest")
+                    .addHeader("X-App-Client", "GeoAlarm-Android")
+                    .build()
+                chain.proceed(request)
+            }
             .addInterceptor(logging)
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)

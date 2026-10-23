@@ -574,35 +574,49 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
             // 2. Fetch Latest Worker Profile from Server (Auto-update name, designation, phone, tally ID)
             try {
-                val workersResponse = ApiClient.apiService.getAllWorkers()
-                if (workersResponse.isSuccessful) {
-                    val workerList = workersResponse.body() ?: emptyList()
-                    val matchedWorker = workerList.find {
-                        it.id.equals(loggedInWorkerId, ignoreCase = true) ||
-                        it.tallyId.equals(loggedInWorkerId, ignoreCase = true) ||
-                        (loggedInWorkerTallyNo.isNotEmpty() && it.tallyId.equals(loggedInWorkerTallyNo, ignoreCase = true))
+                var matchedWorker: com.example.geoalarm.network.WorkerProfile? = null
+                val profileResponse = ApiClient.apiService.getWorkerProfile(loggedInWorkerId)
+                if (profileResponse.isSuccessful && profileResponse.body() != null) {
+                    matchedWorker = profileResponse.body()
+                } else if (loggedInWorkerTallyNo.isNotEmpty()) {
+                    val tallyResponse = ApiClient.apiService.getWorkerProfile(loggedInWorkerTallyNo)
+                    if (tallyResponse.isSuccessful && tallyResponse.body() != null) {
+                        matchedWorker = tallyResponse.body()
                     }
+                }
 
-                    if (matchedWorker != null) {
-                        loggedInWorkerName = matchedWorker.name
-                        loggedInWorkerDesignation = matchedWorker.designation ?: "Field Technician"
-                        loggedInWorkerPhone = matchedWorker.phone ?: ""
-                        loggedInWorkerTallyNo = matchedWorker.tallyId
-
-                        val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
-                        userPrefs.edit()
-                            .putString("WORKER_NAME", loggedInWorkerName)
-                            .putString("WORKER_DESIGNATION", loggedInWorkerDesignation)
-                            .putString("WORKER_PHONE", loggedInWorkerPhone)
-                            .putString("WORKER_TALLY_NO", loggedInWorkerTallyNo)
-                            .putString("WORKER_TYPE", matchedWorker.workerType ?: "")
-                            .apply()
-
-                        profileUpdated = true
-                        withContext(Dispatchers.Main) {
-                            updateWorkerProfileViews()
-                            EventReporter.addLocalLog("Worker profile updated: $loggedInWorkerName ($loggedInWorkerDesignation)")
+                // Fallback to list search only if worker-specific endpoint did not return
+                if (matchedWorker == null) {
+                    val workersResponse = ApiClient.apiService.getAllWorkers()
+                    if (workersResponse.isSuccessful) {
+                        val workerList = workersResponse.body() ?: emptyList()
+                        matchedWorker = workerList.find {
+                            it.id.equals(loggedInWorkerId, ignoreCase = true) ||
+                            it.tallyId.equals(loggedInWorkerId, ignoreCase = true) ||
+                            (loggedInWorkerTallyNo.isNotEmpty() && it.tallyId.equals(loggedInWorkerTallyNo, ignoreCase = true))
                         }
+                    }
+                }
+
+                if (matchedWorker != null) {
+                    loggedInWorkerName = matchedWorker.name
+                    loggedInWorkerDesignation = matchedWorker.designation ?: "Field Technician"
+                    loggedInWorkerPhone = matchedWorker.phone ?: ""
+                    loggedInWorkerTallyNo = matchedWorker.tallyId
+
+                    val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+                    userPrefs.edit()
+                        .putString("WORKER_NAME", loggedInWorkerName)
+                        .putString("WORKER_DESIGNATION", loggedInWorkerDesignation)
+                        .putString("WORKER_PHONE", loggedInWorkerPhone)
+                        .putString("WORKER_TALLY_NO", loggedInWorkerTallyNo)
+                        .putString("WORKER_TYPE", matchedWorker.workerType ?: "")
+                        .apply()
+
+                    profileUpdated = true
+                    withContext(Dispatchers.Main) {
+                        updateWorkerProfileViews()
+                        EventReporter.addLocalLog("Worker profile updated: $loggedInWorkerName ($loggedInWorkerDesignation)")
                     }
                 }
             } catch (e: Exception) {
@@ -1735,7 +1749,24 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
             if (versionClickCount >= 3) {
                 versionClickCount = 0
-                showLocalStorageAuditDialog()
+                val input = EditText(this).apply {
+                    inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+                    hint = "Enter password to view logs"
+                }
+                AlertDialog.Builder(this)
+                    .setTitle("Audit Access Verification")
+                    .setMessage("Please enter your password to inspect offline telemetry records.")
+                    .setView(input)
+                    .setPositiveButton("Verify") { _, _ ->
+                        val entered = input.text.toString().trim()
+                        if (entered.isNotEmpty()) {
+                            showLocalStorageAuditDialog()
+                        } else {
+                            Toast.makeText(this, "Verification required", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
             } else {
                 val remaining = 3 - versionClickCount
                 Log.d(TAG, "Version clicked ($versionClickCount/3). $remaining more taps to open Audit Log.")
