@@ -4,7 +4,9 @@ import com.google.gson.annotations.SerializedName
 
 data class LocationCoordinate(
     @SerializedName("latitude") val latitude: Double,
-    @SerializedName("longitude") val longitude: Double
+    @SerializedName("longitude") val longitude: Double,
+    @SerializedName("accuracy") val accuracy: Float? = null,
+    @SerializedName("is_mock") val isMock: Boolean? = false
 )
 
 data class JobItem(
