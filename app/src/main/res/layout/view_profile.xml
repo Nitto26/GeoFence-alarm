@@ -52,7 +52,8 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
-                android:text="Rahul Kumar"
+                android:text=""
+                tools:text="Worker Name"
                 android:textColor="@color/text_primary"
                 android:textSize="22sp"
                 android:textStyle="bold" />
@@ -110,7 +111,8 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:text="12345"
+                        android:text=""
+                        tools:text="12345"
                         android:textColor="@color/text_primary"
                         android:textSize="15sp"
                         android:textStyle="bold" />
@@ -210,7 +212,48 @@
             </LinearLayout>
             <View android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/divider" />
 
-            <!-- Item 4: Date of Joining -->
+            <!-- Item 4: Supervisor -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingVertical="14dp">
+
+                <ImageView
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:src="@drawable/ic_person"
+                    app:tint="@color/text_secondary" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="18dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Supervisor"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
+
+                    <TextView
+                        android:id="@+id/tvProfileSupervisor"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="—"
+                        tools:text="Supervisor Name"
+                        android:textColor="@color/text_primary"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+            </LinearLayout>
+            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/divider" />
+
+            <!-- Item 5: Weekly Off Day -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -233,16 +276,17 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Date of Joining"
+                        android:text="Weekly Off Day"
                         android:textColor="@color/text_secondary"
                         android:textSize="12sp" />
 
                     <TextView
-                        android:id="@+id/tvProfileJoinDate"
+                        android:id="@+id/tvProfileWeeklyOff"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:text="15 Jan 2024"
+                        android:text="—"
+                        tools:text="Friday"
                         android:textColor="@color/text_primary"
                         android:textSize="15sp"
                         android:textStyle="bold" />
@@ -250,7 +294,7 @@
             </LinearLayout>
             <View android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/divider" />
 
-            <!-- Item 5: Department -->
+            <!-- Item 6: Designation / Role -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -273,7 +317,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Department"
+                        android:text="Designation / Role"
                         android:textColor="@color/text_secondary"
                         android:textSize="12sp" />
 
@@ -282,7 +326,8 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:text="Electrical"
+                        android:text="—"
+                        tools:text="Field Worker"
                         android:textColor="@color/text_primary"
                         android:textSize="15sp"
                         android:textStyle="bold" />
@@ -290,7 +335,7 @@
             </LinearLayout>
             <View android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/divider" />
 
-            <!-- Item 6: Company -->
+            <!-- Item 7: Company -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -322,7 +367,8 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:text="BuildRight Contractors"
+                        android:text="SGS Field Tracker"
+                        tools:text="SGS Field Tracker"
                         android:textColor="@color/text_primary"
                         android:textSize="15sp"
                         android:textStyle="bold" />

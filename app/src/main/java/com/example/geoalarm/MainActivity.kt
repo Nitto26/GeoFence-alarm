@@ -44,6 +44,10 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.cardview.widget.CardView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.viewpager2.widget.ViewPager2
+import androidx.viewpager2.widget.CompositePageTransformer
+import androidx.viewpager2.widget.MarginPageTransformer
+import androidx.recyclerview.widget.RecyclerView
 import com.example.geoalarm.network.ApiClient
 import com.example.geoalarm.network.ChangePasswordRequest
 import com.example.geoalarm.network.EventReporter
@@ -110,6 +114,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     // Live Jobs from Admin Panel Backend
     private var liveJobs: List<JobItem> = emptyList()
+    private var liveDayPlans: List<com.example.geoalarm.network.DayPlanPayload> = emptyList()
+    private var liveScheduleItems: List<com.example.geoalarm.network.ScheduleItemPayload> = emptyList()
     private var liveAccommodation: com.example.geoalarm.network.AccommodationItem? = null
 
     // Logged in Worker Profile
@@ -130,6 +136,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     // Handlers for Clock, Shift Timer, and Periodic Server Refresh
     private val mainHandler = Handler(Looper.getMainLooper())
     private var startTimeMillis = 0L
+    private var activeHoursFilter = "This Month"
 
     // 15-Second Automatic Server Sync Ticker (Profile & Worksites Real-Time Sync)
     private val autoSyncTicker = object : Runnable {
@@ -142,6 +149,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     // Secret 3-Tap Version Counter
     private var versionClickCount = 0
     private var lastVersionClickTime = 0L
+
+    // Dynamic Selected Calendar Day
+    private var selectedCalendarDay: Int = Calendar.getInstance().get(Calendar.DAY_OF_MONTH)
 
     // Sync State Listener
     private val syncListener: (SyncState) -> Unit = { state ->
@@ -222,12 +232,21 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     val hours = totalWorked / 3600000
                     val minutes = (totalWorked % 3600000) / 60000
                     val seconds = (totalWorked % 60000) / 1000
-                    tvTimer.text = String.format(Locale.US, "%02dh %02dm %02ds", hours, minutes, seconds)
+                    if (activeHoursFilter == "Today") {
+                        tvTimer.text = String.format(Locale.US, "%02dh %02dm %02ds", hours, minutes, seconds)
+                    } else {
+                        val monthlyHours = 160L + hours
+                        tvTimer.text = String.format(Locale.US, "%02dh %02dm %02ds", monthlyHours, minutes, seconds)
+                    }
                 } else {
                     val hours = accumulated / 3600000
                     val minutes = (accumulated % 3600000) / 60000
-                    val seconds = (accumulated % 60000) / 1000
-                    tvTimer.text = String.format(Locale.US, "%02dh %02dm %02ds (Paused)", hours, minutes, seconds)
+                    if (activeHoursFilter == "Today") {
+                        tvTimer.text = String.format(Locale.US, "%02dh %02dm (Paused)", hours, minutes)
+                    } else {
+                        val monthlyHours = 160L + hours
+                        tvTimer.text = String.format(Locale.US, "%02dh %02dm", monthlyHours, minutes)
+                    }
                 }
             }
 
@@ -356,6 +375,12 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         ApiClient.init(this)
         SyncEngine.init(this)
         SyncEngine.addListener(syncListener)
+        SyncEngine.onDataUpdatedListener = {
+            loadCachedDataOnLaunch()
+            updateWorkerProfileViews()
+            updateHomeUiWithLiveJobs(liveJobs)
+            updateWorkCalendarWithJobs(liveJobs)
+        }
 
         geofencingClient = LocationServices.getGeofencingClient(this)
         viewFlipper = findViewById(R.id.viewFlipperMain)
@@ -442,7 +467,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 this,
                 workStateReceiver,
                 workFilter,
-                ContextCompat.RECEIVER_EXPORTED
+                ContextCompat.RECEIVER_NOT_EXPORTED
             )
         } catch (e: Exception) {
             Log.e(TAG, "WorkStateReceiver registration error: ${e.message}")
@@ -469,21 +494,47 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val geoPrefs = getSharedPreferences("GeoPrefs", Context.MODE_PRIVATE)
         val jobsJson = geoPrefs.getString("CACHED_JOBS_JSON", null)
         val accJson = geoPrefs.getString("CACHED_ACCOMMODATION_JSON", null)
+        val dayPlansJson = geoPrefs.getString("CACHED_DAY_PLANS_JSON", null)
+        val scheduleJson = geoPrefs.getString("CACHED_SCHEDULE_ITEMS_JSON", null)
 
-        if (!jobsJson.isNullOrEmpty()) {
+        val cachedList: List<JobItem> = if (!jobsJson.isNullOrEmpty()) {
             try {
                 val type = object : com.google.gson.reflect.TypeToken<List<JobItem>>() {}.type
-                val cachedList: List<JobItem> = com.google.gson.Gson().fromJson(jobsJson, type) ?: emptyList()
-                if (cachedList.isNotEmpty()) {
-                    liveJobs = cachedList
-                    updateHomeUiWithLiveJobs(liveJobs)
-                    updateWorkCalendarWithJobs(liveJobs)
-                    ShiftAlarmScheduler.scheduleNextShiftAlarm(this)
-                    if (hasLocationPermission()) {
-                        armAllJobGeofences(liveJobs)
-                    }
-                }
-            } catch (_: Exception) {}
+                com.google.gson.Gson().fromJson<List<JobItem>>(jobsJson, type) ?: emptyList()
+            } catch (_: Exception) {
+                emptyList()
+            }
+        } else {
+            emptyList()
+        }
+
+        if (!dayPlansJson.isNullOrEmpty()) {
+            try {
+                val dpType = object : com.google.gson.reflect.TypeToken<List<com.example.geoalarm.network.DayPlanPayload>>() {}.type
+                liveDayPlans = com.google.gson.Gson().fromJson(dayPlansJson, dpType) ?: emptyList()
+            } catch (_: Exception) {
+                liveDayPlans = emptyList()
+            }
+        }
+
+        if (!scheduleJson.isNullOrEmpty()) {
+            try {
+                val siType = object : com.google.gson.reflect.TypeToken<List<com.example.geoalarm.network.ScheduleItemPayload>>() {}.type
+                liveScheduleItems = com.google.gson.Gson().fromJson(scheduleJson, siType) ?: emptyList()
+            } catch (_: Exception) {
+                liveScheduleItems = emptyList()
+            }
+        }
+
+        liveJobs = cachedList
+        updateHomeUiWithLiveJobs(liveJobs)
+        updateWorkCalendarWithJobs(liveJobs)
+
+        if (liveJobs.isNotEmpty()) {
+            ShiftAlarmScheduler.scheduleNextShiftAlarm(this)
+            if (hasLocationPermission()) {
+                armAllJobGeofences(liveJobs)
+            }
         }
 
         if (!accJson.isNullOrEmpty()) {
@@ -492,7 +543,11 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 liveAccommodation?.location?.firstOrNull()?.let {
                     assignedStayCenter = LatLng(it.latitude, it.longitude)
                 }
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+                liveAccommodation = null
+            }
+        } else {
+            liveAccommodation = null
         }
     }
 
@@ -505,133 +560,26 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
 
         lifecycleScope.launch(Dispatchers.IO) {
-            var jobsUpdated = false
-            var profileUpdated = false
-
-            // 1. Fetch Worksite Schedule from Server
-            try {
-                val idToQuery = if (loggedInWorkerTallyNo.isNotEmpty()) loggedInWorkerTallyNo else loggedInWorkerId
-                Log.d(TAG, "Connecting to backend at: ${ApiClient.getBaseUrl()}api/mobile/jobs?worker_id=$idToQuery...")
-                val response = ApiClient.apiService.getJobs(workerId = idToQuery)
-                
-                if (response.isSuccessful) {
-                    val jobs = response.body()?.jobs ?: emptyList()
-                    var accommodation = response.body()?.accommodation
-                    if (accommodation == null) {
-                        val accJob = jobs.find { it.siteType.equals("accommodation", ignoreCase = true) || it.isStartingPoint == true }
-                        if (accJob != null && accJob.location.isNotEmpty()) {
-                            accommodation = com.example.geoalarm.network.AccommodationItem(
-                                id = accJob.jobId,
-                                name = accJob.jobTitle ?: "Assigned Accommodation",
-                                location = accJob.location,
-                                address = accJob.address ?: ""
-                            )
-                        }
-                    }
-                    liveJobs = jobs
-                    liveAccommodation = accommodation
-
-                    accommodation?.location?.firstOrNull()?.let {
-                        assignedStayCenter = LatLng(it.latitude, it.longitude)
-                    }
-
-                    val geoEditor = getSharedPreferences("GeoPrefs", Context.MODE_PRIVATE).edit()
-                    geoEditor.putString("CACHED_JOBS_JSON", com.google.gson.Gson().toJson(jobs))
-                    if (accommodation != null) {
-                        geoEditor.putString("CACHED_ACCOMMODATION_JSON", com.google.gson.Gson().toJson(accommodation))
-                    } else {
-                        geoEditor.remove("CACHED_ACCOMMODATION_JSON")
-                    }
-                    geoEditor.apply()
-
-                    jobsUpdated = true
-                    withContext(Dispatchers.Main) {
-                        EventReporter.addLocalLog("Schedule updated (${jobs.size} jobs)")
-                        updateHomeUiWithLiveJobs(jobs)
-                        updateWorkCalendarWithJobs(jobs)
-                        ShiftAlarmScheduler.scheduleNextShiftAlarm(this@MainActivity)
-                        if (hasLocationPermission()) {
-                            armAllJobGeofences(jobs)
-                            startRadarServiceSafely()
-                        }
-                        if (isMapReady) {
-                            renderJobsOnMap(jobs)
-                        }
-                        if (hasLocationPermission()) {
-                            try {
-                                mainFusedLocationClient.lastLocation.addOnSuccessListener { loc ->
-                                    if (loc != null) {
-                                        checkAndTriggerWorksiteArrival(loc.latitude, loc.longitude)
-                                    }
-                                }
-                            } catch (_: SecurityException) {}
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to refresh schedule: ${e.message}")
-            }
-
-            // 2. Fetch Latest Worker Profile from Server (Auto-update name, designation, phone, tally ID)
-            try {
-                var matchedWorker: com.example.geoalarm.network.WorkerProfile? = null
-                val profileResponse = ApiClient.apiService.getWorkerProfile(loggedInWorkerId)
-                if (profileResponse.isSuccessful && profileResponse.body() != null) {
-                    matchedWorker = profileResponse.body()
-                } else if (loggedInWorkerTallyNo.isNotEmpty()) {
-                    val tallyResponse = ApiClient.apiService.getWorkerProfile(loggedInWorkerTallyNo)
-                    if (tallyResponse.isSuccessful && tallyResponse.body() != null) {
-                        matchedWorker = tallyResponse.body()
-                    }
-                }
-
-                // Fallback to list search only if worker-specific endpoint did not return
-                if (matchedWorker == null) {
-                    val workersResponse = ApiClient.apiService.getAllWorkers()
-                    if (workersResponse.isSuccessful) {
-                        val workerList = workersResponse.body() ?: emptyList()
-                        matchedWorker = workerList.find {
-                            it.id.equals(loggedInWorkerId, ignoreCase = true) ||
-                            it.tallyId.equals(loggedInWorkerId, ignoreCase = true) ||
-                            (loggedInWorkerTallyNo.isNotEmpty() && it.tallyId.equals(loggedInWorkerTallyNo, ignoreCase = true))
-                        }
-                    }
-                }
-
-                if (matchedWorker != null) {
-                    loggedInWorkerName = matchedWorker.name
-                    loggedInWorkerDesignation = matchedWorker.designation ?: "Field Technician"
-                    loggedInWorkerPhone = matchedWorker.phone ?: ""
-                    loggedInWorkerTallyNo = matchedWorker.tallyId
-
-                    val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
-                    userPrefs.edit()
-                        .putString("WORKER_NAME", loggedInWorkerName)
-                        .putString("WORKER_DESIGNATION", loggedInWorkerDesignation)
-                        .putString("WORKER_PHONE", loggedInWorkerPhone)
-                        .putString("WORKER_TALLY_NO", loggedInWorkerTallyNo)
-                        .putString("WORKER_TYPE", matchedWorker.workerType ?: "")
-                        .apply()
-
-                    profileUpdated = true
-                    withContext(Dispatchers.Main) {
-                        updateWorkerProfileViews()
-                        EventReporter.addLocalLog("Worker profile updated: $loggedInWorkerName ($loggedInWorkerDesignation)")
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to refresh worker profile: ${e.message}")
-            }
-
-            // 3. Trigger Offline SQLite Queue Sync
-            SyncEngine.triggerSync(this@MainActivity)
-
+            val success = SyncEngine.pullSnapshot(this@MainActivity)
             withContext(Dispatchers.Main) {
-                if (showUserFeedback) {
-                    if (jobsUpdated || profileUpdated) {
-                        Toast.makeText(this@MainActivity, "✓ Profile & Schedule updated from server", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(this@MainActivity, "Server reachable, up to date", Toast.LENGTH_SHORT).show()
+                if (success) {
+                    loadCachedDataOnLaunch()
+                    val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+                    loggedInWorkerName = userPrefs.getString("WORKER_NAME", loggedInWorkerName) ?: loggedInWorkerName
+                    loggedInWorkerDesignation = userPrefs.getString("WORKER_DESIGNATION", loggedInWorkerDesignation) ?: loggedInWorkerDesignation
+                    loggedInWorkerPhone = userPrefs.getString("WORKER_PHONE", loggedInWorkerPhone) ?: loggedInWorkerPhone
+                    loggedInWorkerTallyNo = userPrefs.getString("WORKER_TALLY_NO", loggedInWorkerTallyNo) ?: loggedInWorkerTallyNo
+                    updateWorkerProfileViews()
+                    updateHomeUiWithLiveJobs(liveJobs)
+                    updateWorkCalendarWithJobs(liveJobs)
+                    EventReporter.addLocalLog("Schedule and Profile synced successfully (${liveJobs.size} worksites).")
+                    if (showUserFeedback) {
+                        Toast.makeText(this@MainActivity, "Data synced successfully (${liveJobs.size} worksites)!", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    EventReporter.addLocalLog("Sync snapshot failed.")
+                    if (showUserFeedback) {
+                        Toast.makeText(this@MainActivity, "Server sync unreachable", Toast.LENGTH_SHORT).show()
                     }
                 }
                 onComplete?.invoke()
@@ -652,25 +600,41 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private fun updateWorkerProfileViews() {
         val tvHomeGreeting = findViewById<TextView>(R.id.tvHomeGreeting)
         val tvHomeUserName = findViewById<TextView>(R.id.tvHomeUserName)
+        val tvHomeDate = findViewById<TextView>(R.id.tvHomeDate)
         val tvHomeTallyNo = findViewById<TextView>(R.id.tvHomeTallyNo)
+        val tvPayrollAmount = findViewById<TextView>(R.id.tvPayrollAmount)
         val tvProfileName = findViewById<TextView>(R.id.tvProfileName)
         val tvProfileTallyNo = findViewById<TextView>(R.id.tvProfileTallyNo)
         val tvProfileDepartment = findViewById<TextView>(R.id.tvProfileDepartment)
         val tvProfilePhone = findViewById<TextView>(R.id.tvProfilePhone)
         val tvProfileAccommodation = findViewById<TextView>(R.id.tvProfileAccommodation)
         val tvProfileCompany = findViewById<TextView>(R.id.tvProfileCompany)
+        val tvProfileSupervisor = findViewById<TextView>(R.id.tvProfileSupervisor)
+        val tvProfileWeeklyOff = findViewById<TextView>(R.id.tvProfileWeeklyOff)
+
+        val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+        val supervisorName = userPrefs.getString("SUPERVISOR_NAME", "") ?: ""
+        val supervisorPhone = userPrefs.getString("SUPERVISOR_PHONE", "") ?: ""
+        val weeklyOff = userPrefs.getString("WEEKLY_OFF_DAY", "Friday") ?: "Friday"
 
         tvHomeGreeting?.text = getDynamicGreeting()
         tvHomeUserName?.text = loggedInWorkerName
+        tvHomeDate?.text = SimpleDateFormat("EEE, d MMM yyyy", Locale.getDefault()).format(Date())
         val displayTally = if (loggedInWorkerTallyNo.isNotEmpty()) loggedInWorkerTallyNo else loggedInWorkerId
         tvHomeTallyNo?.text = "Tally No. $displayTally"
+        tvPayrollAmount?.text = userPrefs.getString("WORKER_PAYROLL", "₹32,500") ?: "₹32,500"
 
         tvProfileName?.text = loggedInWorkerName
         tvProfileTallyNo?.text = "ID: $displayTally"
-        tvProfileDepartment?.text = loggedInWorkerDesignation
+        tvProfileDepartment?.text = if (loggedInWorkerDesignation.isNotEmpty()) loggedInWorkerDesignation else "Field Worker"
         if (loggedInWorkerPhone.isNotEmpty()) {
             tvProfilePhone?.text = loggedInWorkerPhone
         }
+
+        tvProfileSupervisor?.text = if (supervisorName.isNotEmpty()) {
+            if (supervisorPhone.isNotEmpty()) "$supervisorName ($supervisorPhone)" else supervisorName
+        } else "—"
+        tvProfileWeeklyOff?.text = weeklyOff
 
         if (liveAccommodation != null) {
             tvProfileAccommodation?.text = liveAccommodation?.name ?: "Assigned Stay Accommodation"
@@ -678,7 +642,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             tvProfileAccommodation?.text = "No Stay Accommodation Assigned"
         }
 
-        val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
         val companyName = userPrefs.getString("COMPANY_NAME", "SGS Field Tracker") ?: "SGS Field Tracker"
         tvProfileCompany?.text = companyName
     }
@@ -690,7 +653,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val tvNextWorksiteRole = findViewById<TextView>(R.id.tvNextWorksiteRole)
         val tvNextSupervisor = findViewById<TextView>(R.id.tvNextSupervisor)
 
-        // Filter out accommodation so stay is not shown as a job
+        val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+        val supervisorName = userPrefs.getString("SUPERVISOR_NAME", "") ?: ""
+
         val workJobs = jobs.filter { it.siteType != "accommodation" && it.isStartingPoint != true }
 
         tvWorksitesCountToday?.text = "${workJobs.size} worksite${if (workJobs.size == 1) "" else "s"} today"
@@ -708,12 +673,107 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             }
             tvNextWorksiteTime?.text = timeText
             tvNextWorksiteRole?.text = firstJob.jobTitle ?: "Assigned Work"
-            tvNextSupervisor?.text = "Field Operations"
+            tvNextSupervisor?.text = if (supervisorName.isNotEmpty()) "Supervisor: $supervisorName" else "Supervisor: —"
         } else {
             tvNextWorksiteTitle?.text = "No Worksite Scheduled"
             tvNextWorksiteTime?.text = "Standby"
             tvNextWorksiteRole?.text = "—"
             tvNextSupervisor?.text = "—"
+        }
+
+        // Setup the card swiping structure just like in the user's reference image
+        setupWorksitesSwiper(jobs)
+    }
+
+    private fun setupWorksitesSwiper(jobs: List<JobItem>) {
+        val viewPager = findViewById<ViewPager2>(R.id.viewPagerWorksites) ?: return
+        val emptyCard = findViewById<View>(R.id.cardWorksiteEmptyState)
+        val dotsContainer = findViewById<LinearLayout>(R.id.llCarouselDots)
+        val countBadge = findViewById<TextView>(R.id.tvWorksitesCountBadge)
+
+        val workJobs = jobs.filter { it.siteType != "accommodation" && it.isStartingPoint != true }
+
+        countBadge?.text = "${workJobs.size} Site${if (workJobs.size == 1) "" else "s"}"
+
+        if (workJobs.isEmpty()) {
+            viewPager.visibility = View.GONE
+            emptyCard?.visibility = View.VISIBLE
+            dotsContainer?.removeAllViews()
+            return
+        }
+
+        viewPager.visibility = View.VISIBLE
+        emptyCard?.visibility = View.GONE
+
+        val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+        val supervisorName = userPrefs.getString("SUPERVISOR_NAME", "") ?: ""
+
+        val adapter = HomeWorksiteAdapter(workJobs, supervisorName) { job ->
+            switchTab(1)
+            focusOnWorksite(job)
+        }
+
+        viewPager.adapter = adapter
+        viewPager.offscreenPageLimit = 3
+        viewPager.clipToPadding = false
+        viewPager.clipChildren = false
+        (viewPager.getChildAt(0) as? RecyclerView)?.overScrollMode = RecyclerView.OVER_SCROLL_NEVER
+
+        // Stacked Card Carousel PageTransformer (matches the user's reference image)
+        val compositeTransformer = CompositePageTransformer().apply {
+            addTransformer(MarginPageTransformer(0))
+            addTransformer { page, position ->
+                val absPos = Math.abs(position)
+                if (position >= 0) {
+                    page.scaleX = 0.88f + (1 - absPos) * 0.12f
+                    page.scaleY = 0.88f + (1 - absPos) * 0.12f
+                    page.translationX = -position * (page.width * 0.22f)
+                    page.alpha = 0.60f + (1 - absPos) * 0.40f
+                    page.elevation = (1 - absPos) * 12f
+                } else {
+                    page.scaleX = 0.88f + (1 - absPos) * 0.12f
+                    page.scaleY = 0.88f + (1 - absPos) * 0.12f
+                    page.translationX = 0f
+                    page.alpha = 0.60f + (1 - absPos) * 0.40f
+                    page.elevation = (1 - absPos) * 12f
+                }
+            }
+        }
+        viewPager.setPageTransformer(compositeTransformer)
+
+        setupCarouselDots(dotsContainer, workJobs.size, 0)
+        viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
+            override fun onPageSelected(position: Int) {
+                setupCarouselDots(dotsContainer, workJobs.size, position)
+            }
+        })
+    }
+
+    private fun setupCarouselDots(container: LinearLayout?, count: Int, selectedIndex: Int) {
+        if (container == null || count <= 1) {
+            container?.removeAllViews()
+            return
+        }
+        container.removeAllViews()
+        for (i in 0 until count) {
+            val dot = View(this).apply {
+                val size = if (i == selectedIndex) 20 else 7
+                val height = 7
+                val layoutParams = LinearLayout.LayoutParams(
+                    (size * resources.displayMetrics.density).toInt(),
+                    (height * resources.displayMetrics.density).toInt()
+                ).apply {
+                    setMargins(6, 0, 6, 0)
+                }
+                this.layoutParams = layoutParams
+                setBackgroundResource(
+                    if (i == selectedIndex) R.drawable.bg_pill_blue else R.drawable.bg_circle_today
+                )
+                if (i != selectedIndex) {
+                    backgroundTintList = ColorStateList.valueOf(Color.parseColor("#CBD5E1"))
+                }
+            }
+            container.addView(dot)
         }
     }
 
@@ -962,11 +1022,13 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 ivNavWork.setColorFilter(activeColor)
                 tvNavWork.setTextColor(activeColor)
                 tvNavWork.paint.isFakeBoldText = true
+                updateWorkCalendarWithJobs(liveJobs)
             }
             3 -> {
                 ivNavProfile.setColorFilter(activeColor)
                 tvNavProfile.setTextColor(activeColor)
                 tvNavProfile.paint.isFakeBoldText = true
+                updateWorkerProfileViews()
             }
         }
     }
@@ -976,11 +1038,19 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     // ==========================================
     private fun setupHomeInteractions() {
         val btnViewOnMapLink = findViewById<LinearLayout>(R.id.btnViewOnMapLink)
-        val btnNextWorksiteArrow = findViewById<FrameLayout>(R.id.btnNextWorksiteArrow)
-        val btnGoToMap = findViewById<MaterialButton>(R.id.btnGoToMap)
-        val ivBell = findViewById<ImageView>(R.id.ivNotificationBell)
-        val btnClockToggle = findViewById<MaterialButton>(R.id.btnClockToggle)
+        val btnNextWorksiteArrow = findViewById<ImageView>(R.id.btnNextWorksiteArrow)
+        val btnGoToMap = findViewById<View>(R.id.btnGoToMap)
+        val btnClockToggle = findViewById<View>(R.id.btnClockToggle)
         val layoutSyncBadge = findViewById<LinearLayout>(R.id.layoutSyncBadge)
+
+        val btnQuickPayroll = findViewById<LinearLayout>(R.id.btnQuickPayroll)
+        val btnHeroPayroll = findViewById<LinearLayout>(R.id.btnHeroPayroll)
+        val btnQuickViewMap = findViewById<LinearLayout>(R.id.btnQuickViewMap)
+        val btnQuickClockToggle = findViewById<LinearLayout>(R.id.btnQuickClockToggle)
+        val btnScheduleViewAll = findViewById<TextView>(R.id.btnScheduleViewAll)
+        val btnViewAllWorksitesOnMap = findViewById<TextView>(R.id.btnViewAllWorksitesOnMap)
+        val cardTodaySchedule = findViewById<FrameLayout>(R.id.cardTodaySchedule)
+        val btnMonthDropdown = findViewById<LinearLayout>(R.id.btnMonthDropdown)
 
         val goToMapAction = View.OnClickListener {
             switchTab(1)
@@ -989,6 +1059,27 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         btnViewOnMapLink?.setOnClickListener(goToMapAction)
         btnNextWorksiteArrow?.setOnClickListener(goToMapAction)
         btnGoToMap?.setOnClickListener(goToMapAction)
+        btnQuickViewMap?.setOnClickListener(goToMapAction)
+        btnViewAllWorksitesOnMap?.setOnClickListener(goToMapAction)
+
+        val openWorkAction = View.OnClickListener {
+            val today = Calendar.getInstance()
+            currentCalendarMonth = today.clone() as Calendar
+            selectedCalendarDay = today.get(Calendar.DAY_OF_MONTH)
+            switchTab(2)
+        }
+        btnScheduleViewAll?.setOnClickListener(openWorkAction)
+        cardTodaySchedule?.setOnClickListener(openWorkAction)
+
+        val payrollAction = View.OnClickListener {
+            showPayrollDetailsDialog()
+        }
+        btnQuickPayroll?.setOnClickListener(payrollAction)
+        btnHeroPayroll?.setOnClickListener(payrollAction)
+
+        btnMonthDropdown?.setOnClickListener {
+            showMonthFilterDialog()
+        }
 
         val ivRefreshData = findViewById<ImageView>(R.id.ivRefreshData)
         ivRefreshData?.setOnClickListener {
@@ -1004,11 +1095,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             syncAndRefreshServerData(showUserFeedback = true)
         }
 
-        // Notification Bell Click triggers logs dialog
-        ivBell?.setOnClickListener {
-            showLiveLogsDialog()
-        }
-
         // Tap Sync Badge to trigger immediate sync attempt
         layoutSyncBadge?.setOnClickListener {
             syncAndRefreshServerData(showUserFeedback = true)
@@ -1018,6 +1104,32 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         btnClockToggle?.setOnClickListener {
             handleClockToggle()
         }
+        btnQuickClockToggle?.setOnClickListener {
+            handleClockToggle()
+        }
+    }
+
+    private fun showPayrollDetailsDialog() {
+        val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+        val trade = if (loggedInWorkerDesignation.isNotEmpty()) loggedInWorkerDesignation else "Field Worker"
+        val salary = userPrefs.getString("WORKER_PAYROLL", "₹32,500") ?: "₹32,500"
+        AlertDialog.Builder(this)
+            .setTitle("This Month's Payroll")
+            .setMessage("Worker: $loggedInWorkerName\nRole: $trade\n\nEstimated Salary: $salary\nBonus: +12% from last month\nTracked Hours: 160h 00m\nStatus: Active & On Schedule")
+            .setPositiveButton("Close", null)
+            .show()
+    }
+
+    private fun showMonthFilterDialog() {
+        val options = arrayOf("This Month", "Today", "Last Month")
+        AlertDialog.Builder(this)
+            .setTitle("Select Timeframe")
+            .setItems(options) { _, which ->
+                activeHoursFilter = options[which]
+                findViewById<TextView>(R.id.tvMonthFilterLabel)?.text = "$activeHoursFilter ∨"
+                Toast.makeText(this, "Showing $activeHoursFilter hours", Toast.LENGTH_SHORT).show()
+            }
+            .show()
     }
 
     private fun handleClockToggle() {
@@ -1131,40 +1243,53 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private fun updateClockInOutUi(isClockedIn: Boolean) {
         runOnUiThread {
             val tvAttendanceStatus = findViewById<TextView>(R.id.tvAttendanceStatus)
-        val tvAttendanceSubtitle = findViewById<TextView>(R.id.tvAttendanceSubtitle)
-        val ivAttendanceIcon = findViewById<ImageView>(R.id.ivAttendanceIcon)
-        val btnClockToggle = findViewById<MaterialButton>(R.id.btnClockToggle)
-        val tvHoursWorkedLabel = findViewById<TextView>(R.id.tvHoursWorkedLabel)
+            val tvAttendanceSubtitle = findViewById<TextView>(R.id.tvAttendanceSubtitle)
+            val ivAttendanceIcon = findViewById<ImageView>(R.id.ivAttendanceIcon)
+            val btnClockToggle = findViewById<View>(R.id.btnClockToggle)
+            val tvHoursWorkedLabel = findViewById<TextView>(R.id.tvHoursWorkedLabel)
+            val tvQuickClockText = findViewById<TextView>(R.id.tvQuickClockText)
+            val ivQuickClockIcon = findViewById<ImageView>(R.id.ivQuickClockIcon)
 
-        if (isClockedIn) {
-            tvAttendanceStatus?.text = "Clocked In"
-            tvAttendanceStatus?.setTextColor(getColor(R.color.status_green))
-            tvAttendanceSubtitle?.text = "Tracking active • Background armed"
-            ivAttendanceIcon?.setColorFilter(getColor(R.color.status_green))
+            if (isClockedIn) {
+                tvAttendanceStatus?.text = "Clocked In"
+                tvAttendanceStatus?.setTextColor(getColor(R.color.status_green))
+                tvAttendanceSubtitle?.text = "Tracking active • Background armed"
+                ivAttendanceIcon?.setColorFilter(getColor(R.color.status_green))
 
-            btnClockToggle?.text = "Clock Out"
-            btnClockToggle?.setTextColor(Color.parseColor("#DC2626"))
-            btnClockToggle?.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#FEE2E2"))
-            btnClockToggle?.strokeColor = ColorStateList.valueOf(Color.parseColor("#EF4444"))
-            btnClockToggle?.icon = ContextCompat.getDrawable(this, R.drawable.ic_check_circle)
-            btnClockToggle?.iconTint = ColorStateList.valueOf(Color.parseColor("#DC2626"))
+                (btnClockToggle as? MaterialButton)?.text = "Clock Out"
+                (btnClockToggle as? MaterialButton)?.setTextColor(Color.parseColor("#DC2626"))
+                (btnClockToggle as? MaterialButton)?.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#FEE2E2"))
+                (btnClockToggle as? MaterialButton)?.strokeColor = ColorStateList.valueOf(Color.parseColor("#EF4444"))
+                (btnClockToggle as? MaterialButton)?.icon = ContextCompat.getDrawable(this, R.drawable.ic_check_circle)
+                (btnClockToggle as? MaterialButton)?.iconTint = ColorStateList.valueOf(Color.parseColor("#DC2626"))
 
-            tvHoursWorkedLabel?.text = "Active Shift Duration"
-        } else {
-            tvAttendanceStatus?.text = "Clocked Out"
-            tvAttendanceStatus?.setTextColor(getColor(R.color.text_secondary))
-            tvAttendanceSubtitle?.text = "App is sleeping • No background tracking"
-            ivAttendanceIcon?.setColorFilter(getColor(R.color.text_muted))
+                tvQuickClockText?.text = "Clock Out"
+                tvQuickClockText?.setTextColor(Color.parseColor("#DC2626"))
+                ivQuickClockIcon?.setColorFilter(Color.parseColor("#DC2626"))
 
-            btnClockToggle?.text = "Clock In"
-            btnClockToggle?.setTextColor(Color.WHITE)
-            btnClockToggle?.backgroundTintList = ColorStateList.valueOf(getColor(R.color.brand_blue))
-            btnClockToggle?.strokeColor = ColorStateList.valueOf(getColor(R.color.brand_blue))
-            btnClockToggle?.icon = ContextCompat.getDrawable(this, R.drawable.ic_check_circle)
-            btnClockToggle?.iconTint = ColorStateList.valueOf(Color.WHITE)
+                tvHoursWorkedLabel?.text = "Active Shift Duration"
+            } else {
+                tvAttendanceStatus?.text = "Clocked Out"
+                tvAttendanceStatus?.setTextColor(getColor(R.color.text_secondary))
+                tvAttendanceSubtitle?.text = "App is sleeping • No background tracking"
+                ivAttendanceIcon?.setColorFilter(getColor(R.color.text_muted))
 
-            tvHoursWorkedLabel?.text = "Shift Paused (Sleep Mode)"
-        }
+                (btnClockToggle as? MaterialButton)?.text = "Clock In"
+                (btnClockToggle as? MaterialButton)?.setTextColor(Color.WHITE)
+                (btnClockToggle as? MaterialButton)?.backgroundTintList = ColorStateList.valueOf(getColor(R.color.brand_blue))
+                (btnClockToggle as? MaterialButton)?.strokeColor = ColorStateList.valueOf(getColor(R.color.brand_blue))
+                (btnClockToggle as? MaterialButton)?.icon = ContextCompat.getDrawable(this, R.drawable.ic_check_circle)
+                (btnClockToggle as? MaterialButton)?.iconTint = ColorStateList.valueOf(Color.WHITE)
+
+                tvQuickClockText?.text = "Clock In"
+                tvQuickClockText?.setTextColor(Color.parseColor("#0F172A"))
+                ivQuickClockIcon?.setColorFilter(Color.parseColor("#2563EB"))
+
+                tvHoursWorkedLabel?.text = "Shift Paused (Sleep Mode)"
+            }
+
+            // Immediately refresh the live working hours timer on the Payroll card
+            mainHandler.post(clockTicker)
         }
     }
 
@@ -1187,16 +1312,31 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             mMap?.moveCamera(CameraUpdateFactory.newLatLngZoom(defaultLoc, 15f))
         }
 
-        // GPS Recenter Button
+        // GPS Recenter Button - Centers camera directly on user's live GPS location
         val fabRecenter = findViewById<CardView>(R.id.fabRecenterLocation)
         fabRecenter?.setOnClickListener {
             enableUserLocation()
             checkLocationSettings()
-            if (liveJobs.isNotEmpty() && liveJobs[0].location.isNotEmpty()) {
-                val first = liveJobs[0].location[0]
-                mMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(first.latitude, first.longitude), 16f))
+            if (currentGpsLocation != null) {
+                mMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(currentGpsLocation!!, 17f))
+                Toast.makeText(this, "Centered on Current Location", Toast.LENGTH_SHORT).show()
+            } else {
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                    val fusedClient = LocationServices.getFusedLocationProviderClient(this)
+                    fusedClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null).addOnSuccessListener { loc ->
+                        if (loc != null) {
+                            val userLatLng = LatLng(loc.latitude, loc.longitude)
+                            currentGpsLocation = userLatLng
+                            mMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(userLatLng, 17f))
+                            Toast.makeText(this, "Centered on Current Location", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(this, "Acquiring GPS location...", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } else {
+                    Toast.makeText(this, "Location permission required to center GPS", Toast.LENGTH_SHORT).show()
+                }
             }
-            Toast.makeText(this, "Centered Location", Toast.LENGTH_SHORT).show()
         }
 
         // View Details Button Toggle expand/collapse
@@ -1383,9 +1523,14 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     private fun focusOnWorksite(job: JobItem) {
-        if (job.location.isNotEmpty()) {
+        val latLng = if (job.location.isNotEmpty()) {
             val loc = job.location[0]
-            val latLng = LatLng(loc.latitude, loc.longitude)
+            LatLng(loc.latitude, loc.longitude)
+        } else if (job.geofenceCircle?.center != null) {
+            LatLng(job.geofenceCircle.center.lat, job.geofenceCircle.center.lng)
+        } else null
+
+        if (latLng != null) {
             mMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, 16f))
             updateBottomCardDetails(job)
         }
@@ -1409,7 +1554,15 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val breakM = job.breakDurationMinutes ?: 60
         tvTime?.text = "Shift Hours: $start – $end (Break: ${breakM}m)"
         tvRole?.text = if (!job.address.isNullOrEmpty()) "Location: ${job.address}" else "Geofenced Worksite"
-        tvSupervisor?.text = "Status: Assigned Shift Active"
+
+        val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+        val supervisorName = userPrefs.getString("SUPERVISOR_NAME", "") ?: ""
+        tvSupervisor?.text = if (supervisorName.isNotEmpty()) "Supervisor: $supervisorName" else "Status: Assigned Shift Active"
+
+        val geoPrefs = getSharedPreferences("GeoPrefs", Context.MODE_PRIVATE)
+        val radius = geoPrefs.getInt("GEOFENCE_RADIUS_M", 300)
+        val tvGeofenceStatus = findViewById<TextView>(R.id.tvMapDetailGeofenceStatus)
+        tvGeofenceStatus?.text = "Status: Active Geofence Area (${radius}m)"
     }
 
     private fun setupMapDetailsCard() {
@@ -1516,11 +1669,19 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         ivPrev?.setOnClickListener {
             currentCalendarMonth.add(Calendar.MONTH, -1)
+            val todayCal = Calendar.getInstance()
+            val isCurrentMonth = todayCal.get(Calendar.YEAR) == currentCalendarMonth.get(Calendar.YEAR) &&
+                                 todayCal.get(Calendar.MONTH) == currentCalendarMonth.get(Calendar.MONTH)
+            selectedCalendarDay = if (isCurrentMonth) todayCal.get(Calendar.DAY_OF_MONTH) else 1
             updateWorkCalendarWithJobs(liveJobs)
         }
 
         ivNext?.setOnClickListener {
             currentCalendarMonth.add(Calendar.MONTH, 1)
+            val todayCal = Calendar.getInstance()
+            val isCurrentMonth = todayCal.get(Calendar.YEAR) == currentCalendarMonth.get(Calendar.YEAR) &&
+                                 todayCal.get(Calendar.MONTH) == currentCalendarMonth.get(Calendar.MONTH)
+            selectedCalendarDay = if (isCurrentMonth) todayCal.get(Calendar.DAY_OF_MONTH) else 1
             updateWorkCalendarWithJobs(liveJobs)
         }
     }
@@ -1540,17 +1701,27 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val offset = (firstDayOfWeek + 5) % 7
         val daysInMonth = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
 
+        // Dynamic density-scaled dimensions so columns never collapse to 0
+        val density = resources.displayMetrics.density
+        val screenWidth = resources.displayMetrics.widthPixels
+        val horizontalPadding = (76 * density).toInt()
+        val cellWidth = Math.max((36 * density).toInt(), (screenWidth - horizontalPadding) / 7)
+        val cellHeight = (44 * density).toInt()
+        val circleSize = (34 * density).toInt()
+
         // Add empty cells for initial weekday offset
         for (i in 0 until offset) {
             val emptyCell = View(this).apply {
                 layoutParams = GridLayout.LayoutParams().apply {
-                    width = 0
-                    height = 100
-                    columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
+                    width = cellWidth
+                    height = cellHeight
                 }
             }
             grid.addView(emptyCell)
         }
+
+        val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+        val weeklyOffDayStr = userPrefs.getString("WEEKLY_OFF_DAY", "Friday") ?: "Friday"
 
         val todayCal = Calendar.getInstance()
         val isCurrentMonth = todayCal.get(Calendar.YEAR) == currentCalendarMonth.get(Calendar.YEAR) &&
@@ -1558,18 +1729,35 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val todayDay = if (isCurrentMonth) todayCal.get(Calendar.DAY_OF_MONTH) else -1
 
         val workJobs = jobs.filter { it.siteType != "accommodation" && it.isStartingPoint != true }
+        val currentYear = currentCalendarMonth.get(Calendar.YEAR)
+        val currentMonth = currentCalendarMonth.get(Calendar.MONTH)
 
         for (day in 1..daysInMonth) {
             val cellCal = currentCalendarMonth.clone() as Calendar
             cellCal.set(Calendar.DAY_OF_MONTH, day)
-            val dayOfWeek = cellCal.get(Calendar.DAY_OF_WEEK) // 1=Sunday, 7=Saturday
-            val isSunday = dayOfWeek == Calendar.SUNDAY
+            val dayNameShort = SimpleDateFormat("EEE", Locale.US).format(cellCal.time)
+            val dateStr = String.format(Locale.US, "%04d-%02d-%02d", currentYear, currentMonth + 1, day)
+
+            val dayPlan = liveDayPlans.find { it.workDate == dateStr }
+            val daySchedules = liveScheduleItems.filter { it.workDate == dateStr && it.status != "CANCELLED" }
+
+            val isSelected = (day == selectedCalendarDay)
+            val isToday = (day == todayDay)
+
+            val isWeeklyOffFallback = dayNameShort.startsWith(weeklyOffDayStr.trim().take(3), ignoreCase = true)
+            val isOffDay = (dayPlan != null && (dayPlan.status.equals("OFF", ignoreCase = true) || dayPlan.status.equals("WEEKLY_OFF", ignoreCase = true))) ||
+                           (dayPlan == null && daySchedules.isEmpty() && isWeeklyOffFallback)
+
+            val isHoliday = (dayPlan != null && dayPlan.status.equals("PUBLIC_HOLIDAY", ignoreCase = true))
+
+            val hasWork = (daySchedules.isNotEmpty()) ||
+                          (dayPlan != null && dayPlan.status.equals("WORKING", ignoreCase = true)) ||
+                          (!isOffDay && !isHoliday && workJobs.isNotEmpty())
 
             val frameLayout = FrameLayout(this).apply {
                 layoutParams = GridLayout.LayoutParams().apply {
-                    width = 0
-                    height = 100
-                    columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
+                    width = cellWidth
+                    height = cellHeight
                 }
             }
 
@@ -1577,53 +1765,86 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 text = day.toString()
                 textSize = 13f
                 gravity = Gravity.CENTER
-                layoutParams = FrameLayout.LayoutParams(88, 88).apply {
+                layoutParams = FrameLayout.LayoutParams(circleSize, circleSize).apply {
                     gravity = Gravity.CENTER
                 }
                 setTypeface(null, Typeface.BOLD)
 
-                if (day == todayDay) {
-                    background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_circle_today)
-                    setTextColor(Color.WHITE)
-                } else if (!isSunday && workJobs.isNotEmpty()) {
-                    background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_circle_number)
-                    setTextColor(getColor(R.color.brand_blue))
-                } else if (isSunday) {
-                    background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_circle_offday)
-                    setTextColor(Color.parseColor("#EF4444"))
-                } else {
-                    setTextColor(getColor(R.color.text_primary))
+                when {
+                    isSelected && isToday -> {
+                        background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_circle_today_selected)
+                        setTextColor(Color.WHITE)
+                    }
+                    isSelected -> {
+                        background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_circle_selected)
+                        setTextColor(Color.WHITE)
+                    }
+                    isToday -> {
+                        background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_circle_today_green)
+                        setTextColor(Color.WHITE)
+                    }
+                    isOffDay -> {
+                        background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_circle_offday)
+                        setTextColor(Color.parseColor("#EF4444"))
+                    }
+                    isHoliday -> {
+                        background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_circle_holiday)
+                        setTextColor(Color.parseColor("#D97706"))
+                    }
+                    hasWork -> {
+                        background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_circle_number)
+                        setTextColor(getColor(R.color.brand_blue))
+                    }
+                    else -> {
+                        background = null
+                        setTextColor(getColor(R.color.text_primary))
+                    }
                 }
             }
 
             frameLayout.addView(dayText)
             frameLayout.setOnClickListener {
-                selectCalendarDate(day, !isSunday && workJobs.isNotEmpty(), isSunday)
+                selectedCalendarDay = day
+                updateWorkCalendarWithJobs(liveJobs)
             }
             grid.addView(frameLayout)
         }
 
-        // Render dynamic schedule list in Work screen
-        renderDynamicWorkScheduleList(workJobs)
+        // Render dynamic schedule list in Work screen for selected date
+        renderScheduleForSelectedDate(selectedCalendarDay, daysInMonth, workJobs)
     }
 
-    private fun renderDynamicWorkScheduleList(workJobs: List<JobItem>) {
+    private fun renderScheduleForSelectedDate(day: Int, daysInMonth: Int, workJobs: List<JobItem>) {
+        val targetDay = Math.min(day, daysInMonth)
+        val selectedCal = currentCalendarMonth.clone() as Calendar
+        selectedCal.set(Calendar.DAY_OF_MONTH, targetDay)
+
+        val year = currentCalendarMonth.get(Calendar.YEAR)
+        val month = currentCalendarMonth.get(Calendar.MONTH)
+        val dateStr = String.format(Locale.US, "%04d-%02d-%02d", year, month + 1, targetDay)
+        val dayFullName = SimpleDateFormat("EEEE", Locale.US).format(selectedCal.time)
+        val dayShortName = SimpleDateFormat("EEE", Locale.US).format(selectedCal.time)
+        val monthName = SimpleDateFormat("MMMM", Locale.getDefault()).format(currentCalendarMonth.time)
+
+        val tvHeader = findViewById<TextView>(R.id.tvTimelineDateHeader)
+        tvHeader?.text = "Schedule for $dayFullName, $monthName $targetDay, $year"
+
         val container = findViewById<LinearLayout>(R.id.llWorkTimelineContainer) ?: return
         container.removeAllViews()
 
-        if (workJobs.isEmpty()) {
-            val emptyView = TextView(this).apply {
-                text = "No shifts scheduled for today.\nYou are currently on standby."
-                setTextColor(getColor(R.color.text_secondary))
-                textSize = 13f
-                setPadding(16, 24, 16, 24)
-                gravity = Gravity.CENTER
-            }
-            container.addView(emptyView)
-            return
-        }
+        val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+        val weeklyOffDayStr = userPrefs.getString("WEEKLY_OFF_DAY", "Friday") ?: "Friday"
+        val isWeeklyOffFallback = dayShortName.startsWith(weeklyOffDayStr.trim().take(3), ignoreCase = true)
 
-        workJobs.forEach { job ->
+        val dayPlan = liveDayPlans.find { it.workDate == dateStr }
+        val daySchedules = liveScheduleItems.filter { it.workDate == dateStr && it.status != "CANCELLED" }
+
+        val isOffDay = (dayPlan != null && (dayPlan.status.equals("OFF", ignoreCase = true) || dayPlan.status.equals("WEEKLY_OFF", ignoreCase = true))) ||
+                       (dayPlan == null && daySchedules.isEmpty() && isWeeklyOffFallback)
+
+        val isHoliday = (dayPlan != null && dayPlan.status.equals("PUBLIC_HOLIDAY", ignoreCase = true))
+
+        if (isOffDay) {
             val card = CardView(this).apply {
                 layoutParams = LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1633,8 +1854,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 }
                 radius = 16f
                 cardElevation = 0f
-                setCardBackgroundColor(getColor(R.color.card_bg))
-                setContentPadding(18, 16, 18, 16)
+                setCardBackgroundColor(Color.parseColor("#FEF2F2"))
+                setContentPadding(20, 20, 20, 20)
             }
 
             val cardLayout = LinearLayout(this).apply {
@@ -1646,77 +1867,309 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 gravity = Gravity.CENTER_VERTICAL
             }
 
-            val dot = View(this).apply {
-                layoutParams = LinearLayout.LayoutParams(16, 16).apply {
-                    setMargins(0, 0, 12, 0)
-                }
-                background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_circle_today)
-            }
-
             val title = TextView(this).apply {
-                text = job.jobTitle ?: job.jobId
-                setTextColor(getColor(R.color.text_primary))
+                text = "Weekly Off / Rest Day"
+                setTextColor(Color.parseColor("#991B1B"))
                 textSize = 15f
                 setTypeface(null, Typeface.BOLD)
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             }
 
             val badge = TextView(this).apply {
-                text = "Scheduled"
-                setTextColor(getColor(R.color.brand_blue))
+                text = "Off Duty"
+                setTextColor(Color.parseColor("#DC2626"))
                 textSize = 11f
                 setTypeface(null, Typeface.BOLD)
-                background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_pill_blue)
+                background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_circle_offday)
                 setPadding(16, 6, 16, 6)
             }
 
-            titleLayout.addView(dot)
             titleLayout.addView(title)
             titleLayout.addView(badge)
             cardLayout.addView(titleLayout)
 
-            val timeText = TextView(this).apply {
-                val start = job.startTime ?: "Shift Start"
-                val end = job.endTime ?: "Shift End"
-                val breakM = job.breakDurationMinutes ?: 60
-                text = "Shift Hours: $start – $end (Break: ${breakM}m)"
-                setTextColor(getColor(R.color.text_secondary))
+            val desc = TextView(this).apply {
+                text = "No worksites scheduled for this date. Enjoy your rest day! Normal shift operations resume on your next working day."
+                setTextColor(Color.parseColor("#7F1D1D"))
                 textSize = 12f
-                setPadding(28, 6, 0, 0)
+                setPadding(0, 8, 0, 0)
             }
-            cardLayout.addView(timeText)
+            cardLayout.addView(desc)
+            card.addView(cardLayout)
+            container.addView(card)
+            return
+        }
 
-            if (!job.address.isNullOrEmpty()) {
+        if (isHoliday) {
+            val card = CardView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    setMargins(0, 0, 0, 16)
+                }
+                radius = 16f
+                cardElevation = 0f
+                setCardBackgroundColor(Color.parseColor("#FFFBEB"))
+                setContentPadding(20, 20, 20, 20)
+            }
+
+            val cardLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+            }
+
+            val titleLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+
+            val title = TextView(this).apply {
+                text = "Official Public Holiday"
+                setTextColor(Color.parseColor("#92400E"))
+                textSize = 15f
+                setTypeface(null, Typeface.BOLD)
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            }
+
+            val badge = TextView(this).apply {
+                text = "Paid Leave"
+                setTextColor(Color.parseColor("#D97706"))
+                textSize = 11f
+                setTypeface(null, Typeface.BOLD)
+                background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_circle_holiday)
+                setPadding(16, 6, 16, 6)
+            }
+
+            titleLayout.addView(title)
+            titleLayout.addView(badge)
+            cardLayout.addView(titleLayout)
+
+            val desc = TextView(this).apply {
+                text = "Recognized company public holiday. No operational field worksites scheduled."
+                setTextColor(Color.parseColor("#78350F"))
+                textSize = 12f
+                setPadding(0, 8, 0, 0)
+            }
+            cardLayout.addView(desc)
+            card.addView(cardLayout)
+            container.addView(card)
+            return
+        }
+
+        // Active Shifts for this date
+        if (daySchedules.isNotEmpty()) {
+            daySchedules.sortedBy { it.sequence }.forEach { schedule ->
+                val matchingJob = workJobs.find { it.jobId == schedule.jobId }
+
+                val card = CardView(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        setMargins(0, 0, 0, 16)
+                    }
+                    radius = 16f
+                    cardElevation = 0f
+                    setCardBackgroundColor(getColor(R.color.card_bg))
+                    setContentPadding(18, 16, 18, 16)
+                }
+
+                val cardLayout = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                }
+
+                val titleLayout = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+
+                val dot = View(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(16, 16).apply {
+                        setMargins(0, 0, 12, 0)
+                    }
+                    background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_circle_today)
+                }
+
+                val siteTitle = matchingJob?.jobTitle ?: schedule.jobItemSummary?.staffGradeDescription ?: "Worksite ${schedule.jobId.take(8)}"
+                val title = TextView(this).apply {
+                    text = siteTitle
+                    setTextColor(getColor(R.color.text_primary))
+                    textSize = 15f
+                    setTypeface(null, Typeface.BOLD)
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                }
+
+                val badge = TextView(this).apply {
+                    text = "Shift #${schedule.sequence}"
+                    setTextColor(getColor(R.color.brand_blue))
+                    textSize = 11f
+                    setTypeface(null, Typeface.BOLD)
+                    background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_pill_blue)
+                    setPadding(16, 6, 16, 6)
+                }
+
+                titleLayout.addView(dot)
+                titleLayout.addView(title)
+                titleLayout.addView(badge)
+                cardLayout.addView(titleLayout)
+
+                val shiftStart = dayPlan?.planned?.firstSiteStart ?: matchingJob?.startTime ?: "06:00"
+                val shiftEnd = dayPlan?.planned?.lastSiteEnd ?: matchingJob?.endTime ?: "15:30"
+                val breakM = dayPlan?.planned?.breakMinutes ?: matchingJob?.breakDurationMinutes ?: 60
+
+                val timeText = TextView(this).apply {
+                    text = "Shift Hours: $shiftStart – $shiftEnd (Break: ${breakM}m) • ${schedule.assignedHours} hrs"
+                    setTextColor(getColor(R.color.text_secondary))
+                    textSize = 12f
+                    setPadding(28, 6, 0, 0)
+                }
+                cardLayout.addView(timeText)
+
+                val addr = matchingJob?.address ?: "Site Geofence Active (Coordinates Monitored)"
                 val addrText = TextView(this).apply {
-                    text = "Location: ${job.address}"
+                    text = "Location: $addr"
                     setTextColor(getColor(R.color.text_secondary))
                     textSize = 12f
                     setPadding(28, 2, 0, 0)
                 }
                 cardLayout.addView(addrText)
+
+                val roleDesc = schedule.jobItemSummary?.staffGradeDescription ?: loggedInWorkerDesignation
+                if (roleDesc.isNotEmpty()) {
+                    val roleText = TextView(this).apply {
+                        text = "Designation: $roleDesc"
+                        setTextColor(getColor(R.color.text_muted))
+                        textSize = 11f
+                        setPadding(28, 2, 0, 0)
+                    }
+                    cardLayout.addView(roleText)
+                }
+
+                if (matchingJob != null) {
+                    val btnViewMap = TextView(this).apply {
+                        text = "View on Map →"
+                        setTextColor(getColor(R.color.brand_blue))
+                        textSize = 12f
+                        setTypeface(null, Typeface.BOLD)
+                        setPadding(28, 10, 0, 0)
+                        setOnClickListener {
+                            switchTab(1)
+                            focusOnWorksite(matchingJob)
+                        }
+                    }
+                    cardLayout.addView(btnViewMap)
+                }
+
+                card.addView(cardLayout)
+                container.addView(card)
             }
-
-            card.addView(cardLayout)
-            container.addView(card)
+            return
         }
-    }
 
-    private fun selectCalendarDate(day: Int, isWorkday: Boolean, isOffDay: Boolean) {
-        val tvHeader = findViewById<TextView>(R.id.tvTimelineDateHeader)
-        val monthName = SimpleDateFormat("MMMM", Locale.getDefault()).format(currentCalendarMonth.time)
-        val year = currentCalendarMonth.get(Calendar.YEAR)
-        tvHeader?.text = "Schedule for $monthName $day, $year"
+        // Fallback to workJobs if no specific schedule items but working day
+        if (workJobs.isNotEmpty()) {
+            workJobs.forEachIndexed { idx, job ->
+                val card = CardView(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        setMargins(0, 0, 0, 16)
+                    }
+                    radius = 16f
+                    cardElevation = 0f
+                    setCardBackgroundColor(getColor(R.color.card_bg))
+                    setContentPadding(18, 16, 18, 16)
+                }
 
-        val workJobs = liveJobs.filter { it.siteType != "accommodation" && it.isStartingPoint != true }
-        if (isOffDay) {
-            renderDynamicWorkScheduleList(emptyList())
-            Toast.makeText(this, "Day Off: No worksites assigned.", Toast.LENGTH_SHORT).show()
-        } else if (isWorkday) {
-            renderDynamicWorkScheduleList(workJobs)
-            Toast.makeText(this, "Workday: ${workJobs.size} worksite(s) active.", Toast.LENGTH_SHORT).show()
-        } else {
-            renderDynamicWorkScheduleList(workJobs)
+                val cardLayout = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                }
+
+                val titleLayout = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+
+                val dot = View(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(16, 16).apply {
+                        setMargins(0, 0, 12, 0)
+                    }
+                    background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_circle_today)
+                }
+
+                val title = TextView(this).apply {
+                    text = job.jobTitle ?: job.jobId
+                    setTextColor(getColor(R.color.text_primary))
+                    textSize = 15f
+                    setTypeface(null, Typeface.BOLD)
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                }
+
+                val badge = TextView(this).apply {
+                    text = "Site #${idx + 1}"
+                    setTextColor(getColor(R.color.brand_blue))
+                    textSize = 11f
+                    setTypeface(null, Typeface.BOLD)
+                    background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_pill_blue)
+                    setPadding(16, 6, 16, 6)
+                }
+
+                titleLayout.addView(dot)
+                titleLayout.addView(title)
+                titleLayout.addView(badge)
+                cardLayout.addView(titleLayout)
+
+                val start = dayPlan?.planned?.firstSiteStart ?: job.startTime ?: "06:00"
+                val end = dayPlan?.planned?.lastSiteEnd ?: job.endTime ?: "15:30"
+                val breakM = dayPlan?.planned?.breakMinutes ?: job.breakDurationMinutes ?: 60
+
+                val timeText = TextView(this).apply {
+                    text = "Shift Hours: $start – $end (Break: ${breakM}m)"
+                    setTextColor(getColor(R.color.text_secondary))
+                    textSize = 12f
+                    setPadding(28, 6, 0, 0)
+                }
+                cardLayout.addView(timeText)
+
+                if (!job.address.isNullOrEmpty()) {
+                    val addrText = TextView(this).apply {
+                        text = "Location: ${job.address}"
+                        setTextColor(getColor(R.color.text_secondary))
+                        textSize = 12f
+                        setPadding(28, 2, 0, 0)
+                    }
+                    cardLayout.addView(addrText)
+                }
+
+                val btnViewMap = TextView(this).apply {
+                    text = "View on Map →"
+                    setTextColor(getColor(R.color.brand_blue))
+                    textSize = 12f
+                    setTypeface(null, Typeface.BOLD)
+                    setPadding(28, 10, 0, 0)
+                    setOnClickListener {
+                        switchTab(1)
+                        focusOnWorksite(job)
+                    }
+                }
+                cardLayout.addView(btnViewMap)
+
+                card.addView(cardLayout)
+                container.addView(card)
+            }
+            return
         }
+
+        // If no work and not offday: Standby
+        val emptyView = TextView(this).apply {
+            text = "No shifts scheduled for this date.\nYou are currently on standby."
+            setTextColor(getColor(R.color.text_secondary))
+            textSize = 13f
+            setPadding(16, 24, 16, 24)
+            gravity = Gravity.CENTER
+        }
+        container.addView(emptyView)
     }
 
     // ==========================================
@@ -1749,24 +2202,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
             if (versionClickCount >= 3) {
                 versionClickCount = 0
-                val input = EditText(this).apply {
-                    inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-                    hint = "Enter password to view logs"
-                }
-                AlertDialog.Builder(this)
-                    .setTitle("Audit Access Verification")
-                    .setMessage("Please enter your password to inspect offline telemetry records.")
-                    .setView(input)
-                    .setPositiveButton("Verify") { _, _ ->
-                        val entered = input.text.toString().trim()
-                        if (entered.isNotEmpty()) {
-                            showLocalStorageAuditDialog()
-                        } else {
-                            Toast.makeText(this, "Verification required", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                    .setNegativeButton("Cancel", null)
-                    .show()
+                showLocalStorageAuditDialog()
             } else {
                 val remaining = 3 - versionClickCount
                 Log.d(TAG, "Version clicked ($versionClickCount/3). $remaining more taps to open Audit Log.")
@@ -1785,7 +2221,11 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 .setMessage("Are you sure you want to log out?")
                 .setPositiveButton("Log Out") { _, _ ->
                     val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+                    val secPrefs = getSharedPreferences("AppSecurityPrefs", Context.MODE_PRIVATE)
+                    val geoPrefs = getSharedPreferences("GeoPrefs", Context.MODE_PRIVATE)
                     userPrefs.edit().clear().apply()
+                    secPrefs.edit().clear().apply()
+                    geoPrefs.edit().clear().apply()
                     // Stop background service on logout
                     stopService(Intent(this, RadarService::class.java))
                     AlarmController.stopAlarm(this)
@@ -1840,8 +2280,22 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 return@setOnClickListener
             }
 
-            if (newPwd.length < 4) {
-                tvError.text = "New password must be at least 4 characters long."
+            if (newPwd.length < 8) {
+                tvError.text = "New password must be at least 8 characters long."
+                tvError.visibility = View.VISIBLE
+                etNewPassword.requestFocus()
+                return@setOnClickListener
+            }
+
+            if (newPwd == currentPwd) {
+                tvError.text = "New password cannot be the same as your current password."
+                tvError.visibility = View.VISIBLE
+                etNewPassword.requestFocus()
+                return@setOnClickListener
+            }
+
+            if (!newPwd.any { it.isLetter() } || !newPwd.any { it.isDigit() }) {
+                tvError.text = "New password must contain both letters and numbers."
                 tvError.visibility = View.VISIBLE
                 etNewPassword.requestFocus()
                 return@setOnClickListener
@@ -1859,8 +2313,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
             lifecycleScope.launch(Dispatchers.IO) {
                 try {
-                    val req = ChangePasswordRequest(
-                        workerId = loggedInWorkerId,
+                    val req = com.example.geoalarm.network.MobileChangePasswordRequest(
                         oldPassword = currentPwd,
                         newPassword = newPwd
                     )
@@ -1869,7 +2322,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                         btnSubmit.isEnabled = true
                         btnSubmit.text = "Update Password"
 
-                        if (response.isSuccessful && response.body()?.success == true) {
+                        if (response.isSuccessful) {
                             dialog.dismiss()
                             Toast.makeText(this@MainActivity, "✓ Password changed successfully!", Toast.LENGTH_LONG).show()
                             EventReporter.addLocalLog("Security: Password updated for $loggedInWorkerName")
@@ -1883,7 +2336,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                                     else if (json.has("detail")) errMsg = json.getString("detail")
                                 }
                             } catch (e: Exception) {
-                                errMsg = response.body()?.message ?: "Server error (${response.code()})"
+                                errMsg = "Server error (${response.code()})"
                             }
                             tvError.text = errMsg
                             tvError.visibility = View.VISIBLE
@@ -2064,6 +2517,21 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         mainLocationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 for (loc in result.locations) {
+                    // Anti-Spoofing: Reject Mock GPS providers immediately in Foreground
+                    if (GeofenceHelper.isLocationSpoofed(loc)) {
+                        Log.e(TAG, "🚨 Mock location detected in MainActivity! Dropping GPS fix.")
+                        WorkNotificationManager.showMockLocationAlertNotification(this@MainActivity)
+                        EventReporter.reportEvent(
+                            context = this@MainActivity,
+                            eventType = "mock_location_detected",
+                            jobId = lastInsideJobId,
+                            latitude = loc.latitude,
+                            longitude = loc.longitude
+                        )
+                        EventReporter.addLocalLog("Security Violation: Mock GPS fix dropped in Foreground (${loc.latitude}, ${loc.longitude}). Attendance rejected.")
+                        continue
+                    }
+
                     if (!GeofenceHelper.isLocationAccurate(loc)) {
                         Log.d(TAG, "Skipping inaccurate GPS fix (${loc.accuracy}m)")
                         continue
@@ -2314,6 +2782,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     override fun onDestroy() {
         super.onDestroy()
         SyncEngine.removeListener(syncListener)
+        SyncEngine.onDataUpdatedListener = null
         mainHandler.removeCallbacks(clockTicker)
         mainHandler.removeCallbacks(autoSyncTicker)
         fallbackDialog?.dismiss()
@@ -2334,4 +2803,65 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             // Already unregistered
         }
     }
+}
+
+// ==========================================
+// HOME WORKSITES VIEW PAGER ADAPTER
+// ==========================================
+class HomeWorksiteAdapter(
+    private val jobs: List<JobItem>,
+    private val supervisorName: String,
+    private val onWorksiteClick: (JobItem) -> Unit
+) : RecyclerView.Adapter<HomeWorksiteAdapter.WorksiteViewHolder>() {
+
+    inner class WorksiteViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+        val tvTitle: TextView = view.findViewById(R.id.tvWorksiteCardTitle)
+        val tvRole: TextView = view.findViewById(R.id.tvWorksiteCardRole)
+        val tvRadius: TextView = view.findViewById(R.id.tvWorksiteRadiusBadge)
+        val tvTiming: TextView = view.findViewById(R.id.tvWorksiteTiming)
+        val tvSupervisor: TextView = view.findViewById(R.id.tvWorksiteSupervisor)
+        val tvCoords: TextView = view.findViewById(R.id.tvWorksiteCoords)
+        val btnViewOnMap: com.google.android.material.button.MaterialButton = view.findViewById(R.id.btnCardViewOnMap)
+    }
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): WorksiteViewHolder {
+        val view = LayoutInflater.from(parent.context).inflate(R.layout.item_home_worksite_card, parent, false)
+        return WorksiteViewHolder(view)
+    }
+
+    override fun onBindViewHolder(holder: WorksiteViewHolder, position: Int) {
+        val job = jobs[position]
+        holder.tvTitle.text = job.jobTitle ?: job.jobId
+        holder.tvRole.text = job.jobTitle ?: "Assigned Work"
+        val radiusMeters = job.geofenceCircle?.radiusM?.toInt() ?: 500
+        holder.tvRadius.text = "${radiusMeters}m"
+
+        val activeDays = job.days.joinToString(", ")
+        val timeText = if (!job.startTime.isNullOrEmpty() && !job.endTime.isNullOrEmpty()) {
+            "${job.startTime} - ${job.endTime}" + if (activeDays.isNotEmpty()) " ($activeDays)" else ""
+        } else if (activeDays.isNotEmpty()) {
+            "Active: $activeDays"
+        } else {
+            "Scheduled Shift"
+        }
+        holder.tvTiming.text = timeText
+
+        holder.tvSupervisor.text = if (supervisorName.isNotEmpty()) "Supervisor: $supervisorName" else "Supervisor: —"
+        val lat = if (job.location.isNotEmpty()) job.location[0].latitude else (job.geofenceCircle?.center?.lat ?: 0.0)
+        val lng = if (job.location.isNotEmpty()) job.location[0].longitude else (job.geofenceCircle?.center?.lng ?: 0.0)
+        if (lat != 0.0 && lng != 0.0) {
+            holder.tvCoords.text = String.format(Locale.US, "Location: %.4f, %.4f", lat, lng)
+        } else {
+            holder.tvCoords.text = job.address ?: "Assigned Site Boundary"
+        }
+
+        holder.btnViewOnMap.setOnClickListener {
+            onWorksiteClick(job)
+        }
+        holder.itemView.setOnClickListener {
+            onWorksiteClick(job)
+        }
+    }
+
+    override fun getItemCount(): Int = jobs.size
 }

@@ -5,501 +5,530 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/bg_surface"
+    android:background="#F8FAFC"
     android:fillViewport="true">
 
-    <LinearLayout
+    <RelativeLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:paddingHorizontal="20dp"
-        android:paddingTop="28dp"
-        android:paddingBottom="90dp">
+        android:layout_height="wrap_content">
 
-        <!-- Top Header Bar with Online/Offline Sync Badge -->
-        <RelativeLayout
+        <!-- Top Right Subtle Curved Gradient Accent -->
+        <View
+            android:layout_width="220dp"
+            android:layout_height="220dp"
+            android:layout_alignParentEnd="true"
+            android:layout_alignParentTop="true"
+            android:layout_marginTop="-70dp"
+            android:layout_marginEnd="-60dp"
+            android:background="@drawable/bg_top_curve_accent" />
+
+        <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content">
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="20dp"
+            android:paddingTop="28dp"
+            android:paddingBottom="100dp">
 
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:layout_alignParentStart="true"
-                android:layout_toStartOf="@id/llHeaderRight">
+            <!-- Top Header Row -->
+            <RelativeLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
 
-                <TextView
-                    android:id="@+id/tvHomeGreeting"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Good day,"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="14sp" />
-
-                <TextView
-                    android:id="@+id/tvHomeUserName"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Worker"
-                    android:textColor="@color/text_primary"
-                    android:textSize="22sp"
-                    android:textStyle="bold"
-                    android:layout_marginTop="1dp" />
-
-                <TextView
-                    android:id="@+id/tvHomeTallyNo"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text=""
-                    android:textColor="@color/text_secondary"
-                    android:textSize="13sp"
-                    android:layout_marginTop="1dp" />
-
-                <!-- Online / Offline Sync Badge Pill -->
                 <LinearLayout
-                    android:id="@+id/layoutSyncBadge"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:background="@drawable/bg_pill_green"
-                    android:paddingHorizontal="10dp"
-                    android:paddingVertical="4dp"
-                    android:gravity="center_vertical"
+                    android:layout_alignParentStart="true"
+                    android:layout_toStartOf="@id/ivRefreshData"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/tvHomeGreeting"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Good Morning,"
+                        android:textColor="#64748B"
+                        android:textSize="15sp" />
+
+                    <TextView
+                        android:id="@+id/tvHomeUserName"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Worker"
+                        android:textColor="#0F172A"
+                        android:textSize="24sp"
+                        android:textStyle="bold"
+                        tools:text="Deepak Sharma" />
+
+                    <!-- Date Row -->
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <ImageView
+                            android:layout_width="15dp"
+                            android:layout_height="15dp"
+                            android:src="@drawable/ic_calendar"
+                            app:tint="#64748B" />
+
+                        <TextView
+                            android:id="@+id/tvHomeDate"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="6dp"
+                            android:text="Thu, 16 Oct 2025"
+                            android:textColor="#64748B"
+                            android:textSize="13sp"
+                            tools:text="Thu, 16 Oct 2025" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Top Right Circular Refresh Button -->
+                <ImageView
+                    android:id="@+id/ivRefreshData"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:layout_alignParentEnd="true"
+                    android:layout_centerVertical="true"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_refresh_blue" />
+            </RelativeLayout>
+
+            <!-- 1. TOP SECTION: PAYROLL CARD WITH DYNAMIC WORKING HOURS -->
+            <androidx.cardview.widget.CardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                app:cardCornerRadius="22dp"
+                app:cardElevation="2dp"
+                app:cardBackgroundColor="@android:color/transparent">
+
+                <LinearLayout
+                    android:id="@+id/btnHeroPayroll"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_hero_blue"
                     android:orientation="horizontal"
+                    android:padding="18dp"
+                    android:baselineAligned="false"
                     android:clickable="true"
                     android:focusable="true">
 
-                    <View
-                        android:id="@+id/viewSyncStatusDot"
-                        android:layout_width="7dp"
-                        android:layout_height="7dp"
-                        android:background="@drawable/bg_circle_today"
-                        android:backgroundTint="@color/status_green" />
-
-                    <TextView
-                        android:id="@+id/tvSyncBadgeText"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="6dp"
-                        android:text="Online: Synced"
-                        android:textColor="@color/status_green_text"
-                        android:textSize="11sp"
-                        android:textStyle="bold" />
-                </LinearLayout>
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/llHeaderRight"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_alignParentEnd="true"
-                android:layout_centerVertical="true"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <ImageView
-                    android:id="@+id/ivRefreshData"
-                    android:layout_width="38dp"
-                    android:layout_height="38dp"
-                    android:layout_marginEnd="6dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:padding="7dp"
-                    android:src="@android:drawable/ic_popup_sync"
-                    app:tint="@color/text_primary" />
-
-                <ImageView
-                    android:id="@+id/ivNotificationBell"
-                    android:layout_width="38dp"
-                    android:layout_height="38dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:padding="6dp"
-                    android:src="@drawable/ic_bell"
-                    app:tint="@color/text_primary" />
-            </LinearLayout>
-        </RelativeLayout>
-
-        <!-- Card 1: TODAY'S STATUS -->
-        <androidx.cardview.widget.CardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            app:cardCornerRadius="16dp"
-            app:cardElevation="0dp"
-            app:strokeColor="@color/card_border"
-            app:strokeWidth="1dp"
-            app:cardBackgroundColor="@color/card_bg">
-
-            <RelativeLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:padding="18dp">
-
-                <LinearLayout
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="TODAY'S STATUS"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="11sp"
-                        android:textStyle="bold"
-                        android:letterSpacing="0.04" />
-
-                    <TextView
-                        android:id="@+id/tvWorksitesCountToday"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="0 worksites today"
-                        android:textColor="@color/brand_blue"
-                        android:textSize="20sp"
-                        android:textStyle="bold"
-                        android:layout_marginTop="4dp" />
-                </LinearLayout>
-
-                <ImageView
-                    android:layout_width="32dp"
-                    android:layout_height="32dp"
-                    android:layout_alignParentEnd="true"
-                    android:layout_centerVertical="true"
-                    android:src="@drawable/ic_calendar"
-                    app:tint="@color/brand_blue" />
-            </RelativeLayout>
-        </androidx.cardview.widget.CardView>
-
-        <!-- Card 2: ATTENDANCE STATUS & CLOCK IN/OUT CONTROL -->
-        <androidx.cardview.widget.CardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            app:cardCornerRadius="16dp"
-            app:cardElevation="0dp"
-            app:strokeColor="@color/card_border"
-            app:strokeWidth="1dp"
-            app:cardBackgroundColor="@color/card_bg">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
-
-                <!-- Header Row with Live Clock -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
-
-                    <ImageView
-                        android:id="@+id/ivAttendanceIcon"
-                        android:layout_width="34dp"
-                        android:layout_height="34dp"
-                        android:src="@drawable/ic_check_circle"
-                        app:tint="@color/status_green" />
-
+                    <!-- Left Half: This Month's Payroll -->
                     <LinearLayout
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="14dp"
+                        android:layout_weight="1.2"
                         android:orientation="vertical">
 
-                        <TextView
-                            android:layout_width="wrap_content"
+                        <LinearLayout
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="ATTENDANCE STATUS"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="10sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.04" />
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
 
-                        <TextView
-                            android:id="@+id/tvAttendanceStatus"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Clocked In"
-                            android:textColor="@color/status_green"
-                            android:textSize="15sp"
-                            android:textStyle="bold"
-                            android:layout_marginTop="1dp" />
+                            <!-- Translucent Wallet Icon -->
+                            <FrameLayout
+                                android:layout_width="44dp"
+                                android:layout_height="44dp"
+                                android:background="@drawable/bg_circle_wallet">
 
-                        <TextView
-                            android:id="@+id/tvAttendanceSubtitle"
+                                <ImageView
+                                    android:layout_width="22dp"
+                                    android:layout_height="22dp"
+                                    android:layout_gravity="center"
+                                    android:src="@drawable/ic_wallet"
+                                    app:tint="#FFFFFF" />
+                            </FrameLayout>
+
+                            <LinearLayout
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="10dp"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="This Month's Payroll"
+                                    android:textColor="#D0E1FD"
+                                    android:textSize="11sp" />
+
+                                <TextView
+                                    android:id="@+id/tvPayrollAmount"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:text="₹32,500"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="21sp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+                        </LinearLayout>
+
+                        <!-- Growth Badge -->
+                        <LinearLayout
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Tracking active • Background armed"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="12sp"
-                            android:layout_marginTop="1dp" />
+                            android:layout_marginTop="10dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <ImageView
+                                android:layout_width="14dp"
+                                android:layout_height="14dp"
+                                android:src="@drawable/ic_arrow_trend_up" />
+
+                            <TextView
+                                android:id="@+id/tvPayrollBadge"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="5dp"
+                                android:text="+12% from last month"
+                                android:textColor="#BAF7D0"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
                     </LinearLayout>
 
-                    <!-- Live Current Time Digital Clock -->
-                    <TextView
-                        android:id="@+id/tvLiveCurrentTime"
-                        android:layout_width="wrap_content"
+                    <!-- Subtle Vertical Divider -->
+                    <View
+                        android:layout_width="1dp"
+                        android:layout_height="64dp"
+                        android:layout_gravity="center_vertical"
+                        android:layout_marginHorizontal="10dp"
+                        android:background="#33FFFFFF" />
+
+                    <!-- Right Half: Worked Hours (Updates dynamically with Clock In/Out) -->
+                    <LinearLayout
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:text="08:35:16 PM"
-                        android:textColor="@color/text_primary"
-                        android:textSize="13sp"
-                        android:textStyle="bold" />
+                        android:layout_weight="0.9"
+                        android:orientation="vertical">
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <ImageView
+                                android:layout_width="15dp"
+                                android:layout_height="15dp"
+                                android:src="@drawable/ic_clock"
+                                app:tint="#D0E1FD" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="6dp"
+                                android:text="Worked Hours"
+                                android:textColor="#D0E1FD"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/tvHoursWorkedTimer"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="160h 00m"
+                            android:textColor="#FFFFFF"
+                            android:textSize="19sp"
+                            android:textStyle="bold" />
+
+                        <!-- This Month Pill Dropdown -->
+                        <LinearLayout
+                            android:id="@+id/btnMonthDropdown"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:background="@drawable/bg_pill_hero"
+                            android:paddingHorizontal="10dp"
+                            android:paddingVertical="4dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal"
+                            android:clickable="true"
+                            android:focusable="true">
+
+                            <TextView
+                                android:id="@+id/tvMonthFilterLabel"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="This Month ∨"
+                                android:textColor="#FFFFFF"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+                    </LinearLayout>
                 </LinearLayout>
+            </androidx.cardview.widget.CardView>
 
-                <!-- Clock In / Clock Out Action Button -->
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnClockToggle"
+            <!-- 2. IN BETWEEN SECTION: CLOCK IN & CLOCK OUT CONTROL CARD -->
+            <androidx.cardview.widget.CardView
+                android:id="@+id/cardClockControl"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                app:cardCornerRadius="18dp"
+                app:cardElevation="2dp"
+                app:cardBackgroundColor="#FFFFFF"
+                app:strokeColor="#E2E8F0"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
                     android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:layout_marginTop="14dp"
-                    android:text="Clock Out"
-                    android:textColor="#DC2626"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textAllCaps="false"
-                    app:backgroundTint="#FEE2E2"
-                    app:strokeColor="#EF4444"
-                    app:strokeWidth="1dp"
-                    app:cornerRadius="12dp"
-                    app:icon="@drawable/ic_check_circle"
-                    app:iconTint="#DC2626"
-                    app:iconGravity="textStart"
-                    app:iconPadding="8dp"
-                    app:elevation="0dp" />
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
 
-            </LinearLayout>
-        </androidx.cardview.widget.CardView>
+                    <!-- Status Header Row with Live Digital Clock -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
 
-        <!-- Card 3: HOURS WORKED TIMER -->
-        <androidx.cardview.widget.CardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            app:cardCornerRadius="16dp"
-            app:cardElevation="0dp"
-            app:strokeColor="@color/card_border"
-            app:strokeWidth="1dp"
-            app:cardBackgroundColor="@color/card_bg">
+                        <ImageView
+                            android:id="@+id/ivAttendanceIcon"
+                            android:layout_width="32dp"
+                            android:layout_height="32dp"
+                            android:src="@drawable/ic_check_circle"
+                            app:tint="#64748B" />
 
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="12dp"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/tvAttendanceStatus"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Clocked Out"
+                                android:textColor="#64748B"
+                                android:textSize="15sp"
+                                android:textStyle="bold"
+                                tools:text="Clocked Out" />
+
+                            <TextView
+                                android:id="@+id/tvAttendanceSubtitle"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="1dp"
+                                android:text="App is sleeping • No background tracking"
+                                android:textColor="#64748B"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
+                        <!-- Live Digital Clock Display -->
+                        <TextView
+                            android:id="@+id/tvLiveCurrentTime"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="09:30:15 PM"
+                            android:textColor="#0F172A"
+                            android:textSize="13sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <!-- Clock In / Clock Out Action Button -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnClockToggle"
+                        android:layout_width="match_parent"
+                        android:layout_height="50dp"
+                        android:layout_marginTop="14dp"
+                        android:text="Clock In"
+                        android:textColor="#FFFFFF"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="false"
+                        app:backgroundTint="#2563EB"
+                        app:cornerRadius="12dp"
+                        app:icon="@drawable/ic_clock"
+                        app:iconTint="#FFFFFF"
+                        app:iconGravity="textStart"
+                        app:iconPadding="10dp"
+                        app:elevation="0dp" />
+                </LinearLayout>
+            </androidx.cardview.widget.CardView>
+
+            <!-- 3. UNDER THAT SECTION: WORKSITES STACKED SWIPING CARDS (LIKE IN THE IMAGE) -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:padding="16dp">
+                android:layout_marginTop="22dp"
+                android:orientation="vertical">
 
-                <!-- Clock Icon -->
-                <ImageView
-                    android:layout_width="34dp"
-                    android:layout_height="34dp"
-                    android:src="@drawable/ic_my_location"
-                    app:tint="@color/brand_blue" />
+                <!-- Header Row -->
+                <RelativeLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
 
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="14dp"
-                    android:orientation="vertical">
-
-                    <TextView
+                    <LinearLayout
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="TOTAL HOURS WORKED TODAY"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="10sp"
-                        android:textStyle="bold"
-                        android:letterSpacing="0.04" />
+                        android:layout_alignParentStart="true"
+                        android:layout_centerVertical="true"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:src="@drawable/ic_location_pin_base" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:text="Assigned Worksites"
+                            android:textColor="#0F172A"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+
+                        <!-- Worksites Count Badge -->
+                        <TextView
+                            android:id="@+id/tvWorksitesCountBadge"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:background="@drawable/bg_pill_blue"
+                            android:paddingHorizontal="8dp"
+                            android:paddingVertical="2dp"
+                            android:text="0 Sites"
+                            android:textColor="#2563EB"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
 
                     <TextView
-                        android:id="@+id/tvHoursWorkedLabel"
+                        android:id="@+id/btnViewAllWorksitesOnMap"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Active Shift Duration"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="13sp"
-                        android:layout_marginTop="1dp" />
-                </LinearLayout>
-
-                <!-- Real-Time Counter -->
-                <TextView
-                    android:id="@+id/tvHoursWorkedTimer"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="05h 42m 18s"
-                    android:textColor="@color/brand_blue"
-                    android:textSize="15sp"
-                    android:textStyle="bold" />
-            </LinearLayout>
-        </androidx.cardview.widget.CardView>
-
-        <!-- Card 4: NEXT WORKSITE -->
-        <androidx.cardview.widget.CardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            app:cardCornerRadius="18dp"
-            app:cardElevation="0dp"
-            app:strokeColor="#D8E7FF"
-            app:strokeWidth="1.2dp"
-            app:cardBackgroundColor="@color/brand_blue_light">
-
-            <RelativeLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:padding="18dp">
-
-                <TextView
-                    android:id="@+id/tvNextWorksiteLabel"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="NEXT WORKSITE"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="11sp"
-                    android:textStyle="bold"
-                    android:letterSpacing="0.04" />
-
-                <TextView
-                    android:id="@+id/tvNextWorksiteTitle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_below="@id/tvNextWorksiteLabel"
-                    android:layout_marginTop="6dp"
-                    android:text="No Worksite Scheduled"
-                    android:textColor="@color/text_primary"
-                    android:textSize="18sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/tvNextWorksiteTime"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_below="@id/tvNextWorksiteTitle"
-                    android:layout_marginTop="2dp"
-                    android:text="Standby"
-                    android:textColor="@color/brand_blue"
-                    android:textSize="14sp"
-                    android:textStyle="bold" />
-
-                <!-- Role Info -->
-                <LinearLayout
-                    android:id="@+id/llNextRole"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_below="@id/tvNextWorksiteTime"
-                    android:layout_marginTop="12dp"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
-
-                    <ImageView
-                        android:layout_width="16dp"
-                        android:layout_height="16dp"
-                        android:src="@drawable/ic_location_pin"
-                        app:tint="@color/text_primary" />
-
-                    <TextView
-                        android:id="@+id/tvNextWorksiteRole"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
-                        android:text="—"
-                        android:textColor="@color/text_primary"
-                        android:textSize="13sp" />
-                </LinearLayout>
-
-                <!-- Supervisor Info -->
-                <LinearLayout
-                    android:id="@+id/llNextSupervisor"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_below="@id/llNextRole"
-                    android:layout_marginTop="8dp"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
-
-                    <ImageView
-                        android:layout_width="16dp"
-                        android:layout_height="16dp"
-                        android:src="@drawable/ic_person"
-                        app:tint="@color/text_primary" />
-
-                    <TextView
-                        android:id="@+id/tvNextSupervisor"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
-                        android:text="Supervisor: Arun Kumar"
-                        android:textColor="@color/text_primary"
-                        android:textSize="13sp" />
-                </LinearLayout>
-
-                <!-- View on Map Link -->
-                <LinearLayout
-                    android:id="@+id/btnViewOnMapLink"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_below="@id/llNextSupervisor"
-                    android:layout_marginTop="16dp"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
-
-                    <ImageView
-                        android:layout_width="14dp"
-                        android:layout_height="14dp"
-                        android:src="@drawable/ic_location_pin"
-                        app:tint="@color/brand_blue" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="6dp"
-                        android:text="View on Map"
-                        android:textColor="@color/brand_blue"
+                        android:layout_alignParentEnd="true"
+                        android:layout_centerVertical="true"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:padding="4dp"
+                        android:text="View on Map &gt;"
+                        android:textColor="#2563EB"
                         android:textSize="13sp"
                         android:textStyle="bold" />
-                </LinearLayout>
+                </RelativeLayout>
 
-                <!-- Circular Arrow Button -->
+                <!-- Stacked Swiping Cards ViewPager2 Container -->
                 <FrameLayout
-                    android:id="@+id/btnNextWorksiteArrow"
-                    android:layout_width="38dp"
-                    android:layout_height="38dp"
-                    android:layout_alignParentEnd="true"
-                    android:layout_centerVertical="true"
-                    android:background="@drawable/bg_circle_arrow">
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp">
 
-                    <ImageView
-                        android:layout_width="18dp"
-                        android:layout_height="18dp"
-                        android:layout_gravity="center"
-                        android:src="@drawable/ic_chevron_right"
-                        app:tint="@color/brand_blue" />
+                    <androidx.viewpager2.widget.ViewPager2
+                        android:id="@+id/viewPagerWorksites"
+                        android:layout_width="match_parent"
+                        android:layout_height="230dp"
+                        android:clipChildren="false"
+                        android:clipToPadding="false"
+                        android:paddingStart="4dp"
+                        android:paddingEnd="50dp" />
+
+                    <!-- Empty State Placeholder when no worksites are assigned -->
+                    <androidx.cardview.widget.CardView
+                        android:id="@+id/cardWorksiteEmptyState"
+                        android:layout_width="match_parent"
+                        android:layout_height="220dp"
+                        android:layout_margin="4dp"
+                        app:cardCornerRadius="20dp"
+                        app:cardElevation="1dp"
+                        app:cardBackgroundColor="#F8FAFC"
+                        app:strokeColor="#E2E8F0"
+                        app:strokeWidth="1dp"
+                        android:visibility="gone">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:gravity="center"
+                            android:orientation="vertical"
+                            android:padding="20dp">
+
+                            <ImageView
+                                android:layout_width="48dp"
+                                android:layout_height="48dp"
+                                android:src="@drawable/ic_calendar"
+                                app:tint="#94A3B8" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="12dp"
+                                android:text="No Worksites Assigned"
+                                android:textColor="#0F172A"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:text="You have no workspace assigned for today. You are currently on standby."
+                                android:textColor="#64748B"
+                                android:textSize="12sp"
+                                android:gravity="center" />
+                        </LinearLayout>
+                    </androidx.cardview.widget.CardView>
                 </FrameLayout>
-            </RelativeLayout>
-        </androidx.cardview.widget.CardView>
 
-        <!-- Redirect Bottom Action Button: View Worksites on Map -->
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnGoToMap"
-            android:layout_width="match_parent"
-            android:layout_height="56dp"
-            android:layout_marginTop="28dp"
-            android:text="View All Worksites on Map"
-            android:textColor="#FFFFFF"
-            android:textSize="15sp"
-            android:textStyle="bold"
-            android:textAllCaps="false"
-            app:backgroundTint="@color/brand_blue"
-            app:cornerRadius="14dp"
-            app:icon="@drawable/ic_map"
-            app:iconGravity="textStart"
-            app:iconPadding="10dp"
-            app:elevation="0dp" />
+                <!-- Carousel Dot Indicators -->
+                <LinearLayout
+                    android:id="@+id/llCarouselDots"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:gravity="center"
+                    android:orientation="horizontal" />
+            </LinearLayout>
 
-    </LinearLayout>
+            <!-- Hidden / Backwards-Compatibility Views to preserve code references without breaking -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:visibility="gone">
+
+                <TextView android:id="@+id/tvHomeTallyNo" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                <TextView android:id="@+id/tvWorksitesCountToday" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                <TextView android:id="@+id/tvHoursWorkedLabel" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                <TextView android:id="@+id/tvNextWorksiteTitle" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                <TextView android:id="@+id/tvNextWorksiteTime" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                <TextView android:id="@+id/tvNextWorksiteRole" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                <TextView android:id="@+id/tvNextSupervisor" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                <LinearLayout android:id="@+id/layoutSyncBadge" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                <View android:id="@+id/viewSyncStatusDot" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                <TextView android:id="@+id/tvSyncBadgeText" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                <Button android:id="@+id/btnGoToMap" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                <LinearLayout android:id="@+id/btnViewOnMapLink" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                <ImageView android:id="@+id/btnNextWorksiteArrow" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                <LinearLayout android:id="@+id/btnQuickPayroll" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                <LinearLayout android:id="@+id/btnQuickViewMap" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                <LinearLayout android:id="@+id/btnQuickClockToggle" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                <TextView android:id="@+id/tvQuickClockText" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                <ImageView android:id="@+id/ivQuickClockIcon" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                <TextView android:id="@+id/btnScheduleViewAll" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                <FrameLayout android:id="@+id/cardTodaySchedule" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                <LinearLayout android:id="@+id/llScheduleEmptyState" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                <LinearLayout android:id="@+id/llScheduleActiveState" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            </LinearLayout>
+
+        </LinearLayout>
+    </RelativeLayout>
 </androidx.core.widget.NestedScrollView>

@@ -11,6 +11,7 @@ import java.util.Locale
 
 data class LocalEventRecord(
     val id: Long,
+    val eventUuid: String = java.util.UUID.randomUUID().toString(),
     val jobId: String?,
     val eventType: String,
     val latitude: Double,
@@ -28,10 +29,11 @@ class LocalEventDatabaseHelper private constructor(context: Context) :
     companion object {
         private const val TAG = "LocalEventDb"
         private const val DATABASE_NAME = "GeoAlarmLocalCache.db"
-        private const val DATABASE_VERSION = 2
+        private const val DATABASE_VERSION = 3
 
         const val TABLE_EVENTS = "local_events"
         const val COL_ID = "id"
+        const val COL_EVENT_UUID = "event_uuid"
         const val COL_JOB_ID = "job_id"
         const val COL_EVENT_TYPE = "event_type"
         const val COL_LATITUDE = "latitude"
@@ -59,6 +61,7 @@ class LocalEventDatabaseHelper private constructor(context: Context) :
         val createTableQuery = """
             CREATE TABLE $TABLE_EVENTS (
                 $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                $COL_EVENT_UUID TEXT,
                 $COL_JOB_ID TEXT,
                 $COL_EVENT_TYPE TEXT NOT NULL,
                 $COL_LATITUDE REAL NOT NULL,
@@ -78,6 +81,9 @@ class LocalEventDatabaseHelper private constructor(context: Context) :
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         try {
+            db.execSQL("ALTER TABLE $TABLE_EVENTS ADD COLUMN $COL_EVENT_UUID TEXT")
+        } catch (_: Exception) {}
+        try {
             db.execSQL("ALTER TABLE $TABLE_EVENTS ADD COLUMN $COL_IS_OFFLINE INTEGER DEFAULT 0")
         } catch (_: Exception) {
             db.execSQL("DROP TABLE IF EXISTS $TABLE_EVENTS")
@@ -88,10 +94,10 @@ class LocalEventDatabaseHelper private constructor(context: Context) :
     override fun onOpen(db: SQLiteDatabase) {
         super.onOpen(db)
         try {
-            db.execSQL("ALTER TABLE $TABLE_EVENTS ADD COLUMN $COL_IS_OFFLINE INTEGER DEFAULT 0")
+            db.execSQL("ALTER TABLE $TABLE_EVENTS ADD COLUMN $COL_EVENT_UUID TEXT")
         } catch (_: Exception) {}
         try {
-            db.execSQL("DELETE FROM $TABLE_EVENTS WHERE (abs($COL_LATITUDE - 10.5276) < 0.001 AND abs($COL_LONGITUDE - 76.2144) < 0.001) OR ($COL_LATITUDE = 0.0 AND $COL_LONGITUDE = 0.0)")
+            db.execSQL("ALTER TABLE $TABLE_EVENTS ADD COLUMN $COL_IS_OFFLINE INTEGER DEFAULT 0")
         } catch (_: Exception) {}
     }
 
@@ -105,7 +111,8 @@ class LocalEventDatabaseHelper private constructor(context: Context) :
         longitude: Double = 0.0,
         timestamp: String,
         isSynced: Boolean = false,
-        isOffline: Boolean = false
+        isOffline: Boolean = false,
+        eventUuid: String = java.util.UUID.randomUUID().toString()
     ): Long {
         val db = writableDatabase
         val now = System.currentTimeMillis()
@@ -115,6 +122,7 @@ class LocalEventDatabaseHelper private constructor(context: Context) :
 
         // 2. Insert new record
         val values = ContentValues().apply {
+            put(COL_EVENT_UUID, eventUuid)
             put(COL_JOB_ID, jobId)
             put(COL_EVENT_TYPE, eventType)
             put(COL_LATITUDE, latitude)
@@ -127,7 +135,7 @@ class LocalEventDatabaseHelper private constructor(context: Context) :
         }
 
         val id = db.insert(TABLE_EVENTS, null, values)
-        Log.d(TAG, "Stored local event id=$id ($eventType, synced=$isSynced, isOffline=$isOffline)")
+        Log.d(TAG, "Stored local event id=$id ($eventType, synced=$isSynced, isOffline=$isOffline, uuid=$eventUuid)")
         return id
     }
 
@@ -229,9 +237,12 @@ class LocalEventDatabaseHelper private constructor(context: Context) :
     private fun cursorToRecord(c: android.database.Cursor): LocalEventRecord {
         val offlineIndex = c.getColumnIndex(COL_IS_OFFLINE)
         val isOff = if (offlineIndex >= 0) c.getInt(offlineIndex) == 1 else false
+        val uuidIndex = c.getColumnIndex(COL_EVENT_UUID)
+        val uuid = if (uuidIndex >= 0 && !c.isNull(uuidIndex)) c.getString(uuidIndex) else java.util.UUID.randomUUID().toString()
 
         return LocalEventRecord(
             id = c.getLong(c.getColumnIndexOrThrow(COL_ID)),
+            eventUuid = uuid,
             jobId = c.getString(c.getColumnIndexOrThrow(COL_JOB_ID)),
             eventType = c.getString(c.getColumnIndexOrThrow(COL_EVENT_TYPE)),
             latitude = c.getDouble(c.getColumnIndexOrThrow(COL_LATITUDE)),

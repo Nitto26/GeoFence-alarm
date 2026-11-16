@@ -55,26 +55,35 @@ object EventReporter {
         val effectiveInsideJobId = currentInsideJobId ?: persistedInsideJobId
         val effectiveLastEventType = lastNonPingEventType ?: sharedPrefs.getString("LAST_NON_PING_EVENT_TYPE", null)
 
+        val normalizedEventType = when (eventType.lowercase().trim()) {
+            "entry", "clock_in" -> "ENTRY"
+            "exit", "clock_out" -> "EXIT"
+            "ping" -> "PING"
+            "location_service_off", "gps_off", "location_disabled" -> "LOCATION_DISABLED"
+            "location_service_on", "gps_on", "location_enabled" -> "LOCATION_ENABLED"
+            else -> eventType.uppercase().trim()
+        }
+
         // STRICT STATE TRANSITION VALIDATION & DEDUPLICATION:
-        if (eventType != "ping") {
+        if (normalizedEventType != "PING") {
             // Rule 1: Cannot EXIT if already outside worksite AND last event was already exit
-            if (eventType == "exit") {
-                if (effectiveInsideJobId == null && effectiveLastEventType == "exit") {
+            if (normalizedEventType == "EXIT") {
+                if (effectiveInsideJobId == null && effectiveLastEventType == "EXIT") {
                     Log.d(TAG, "Suppressed redundant EXIT event: already outside worksite.")
                     return
                 }
             }
 
             // Rule 2: Cannot ENTRY if already recorded inside this exact worksite
-            if (eventType == "entry") {
-                if (effectiveInsideJobId == normalizedJobId && effectiveLastEventType == "entry") {
+            if (normalizedEventType == "ENTRY") {
+                if (effectiveInsideJobId == normalizedJobId && effectiveLastEventType == "ENTRY") {
                     Log.d(TAG, "Suppressed redundant ENTRY event: already inside $normalizedJobId.")
                     return
                 }
             }
 
             // Rule 3: Debounce identical non-ping events within 15 seconds
-            val eventKey = "$eventType-${normalizedJobId ?: ""}"
+            val eventKey = "$normalizedEventType-${normalizedJobId ?: ""}"
             val lastTime = lastReportedEvents[eventKey] ?: 0L
             if (now - lastTime < 15_000L) {
                 Log.d(TAG, "Suppressed rapid duplicate event: $eventKey within 15s")
@@ -84,13 +93,11 @@ object EventReporter {
         }
 
         // Update state tracking in memory and persist across process kills
-        if (eventType != "ping") {
-            lastNonPingEventType = eventType
-            when (eventType) {
-                "entry", "clock_in" -> currentInsideJobId = normalizedJobId
-                "exit", "clock_out" -> currentInsideJobId = null
-                "accommodation_entry" -> currentInsideJobId = "accommodation"
-                "accommodation_exit" -> currentInsideJobId = null
+        if (normalizedEventType != "PING") {
+            lastNonPingEventType = normalizedEventType
+            when (normalizedEventType) {
+                "ENTRY" -> currentInsideJobId = normalizedJobId
+                "EXIT" -> currentInsideJobId = null
             }
 
             sharedPrefs.edit()
@@ -102,14 +109,14 @@ object EventReporter {
         val eventDate = if (eventTimestamp != null && eventTimestamp > 0L) Date(eventTimestamp) else Date()
         val isoTimestamp = getIsoTimestamp(eventDate)
         val displayJob = normalizedJobId ?: "Device"
-        addLocalLog("Event recorded: $eventType ($displayJob)")
+        addLocalLog("Event recorded: $normalizedEventType ($displayJob)")
 
         try {
             // 1. ALWAYS persist event to 3-day local SQLite database first
             val isCurrentlyOffline = !SyncEngine.isOnlineNow(context)
             val db = LocalEventDatabaseHelper.getInstance(context)
             val recordId = db.insertEvent(
-                eventType = eventType,
+                eventType = normalizedEventType,
                 jobId = normalizedJobId,
                 latitude = latitude,
                 longitude = longitude,
@@ -117,7 +124,7 @@ object EventReporter {
                 isSynced = false,
                 isOffline = isCurrentlyOffline
             )
-            Log.d(TAG, "Persisted event $recordId locally ($eventType, offline=$isCurrentlyOffline, ts=$isoTimestamp). Triggering auto-sync...")
+            Log.d(TAG, "Persisted event $recordId locally ($normalizedEventType, offline=$isCurrentlyOffline, ts=$isoTimestamp). Triggering auto-sync...")
 
             // 2. Trigger auto-sync engine (flushes immediately if online, holds safely if offline)
             SyncEngine.triggerSync(context)
@@ -127,9 +134,9 @@ object EventReporter {
         }
     }
 
-    private fun getIsoTimestamp(date: Date = Date()): String {
-        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US)
-        sdf.timeZone = TimeZone.getDefault()
+    fun getIsoTimestamp(date: Date = Date()): String {
+        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
+        sdf.timeZone = TimeZone.getTimeZone("UTC")
         return sdf.format(date)
     }
 }

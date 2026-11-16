@@ -18,6 +18,7 @@ import androidx.lifecycle.lifecycleScope
 import com.example.geoalarm.network.ApiClient
 import com.example.geoalarm.network.EventReporter
 import com.example.geoalarm.network.MobileLoginRequest
+import com.example.geoalarm.network.SyncEngine
 import com.example.geoalarm.network.WorkerProfile
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.Dispatchers
@@ -47,38 +48,44 @@ class LoginActivity : AppCompatActivity() {
         val btnLogin = findViewById<MaterialButton>(R.id.btnLogin)
         val tvConnectionStatus = findViewById<TextView>(R.id.tvConnectionStatus)
 
-        // Display current active cloud server
+        // Display current active cloud server (Debug-only switching to prevent credential harvesting)
         tvConnectionStatus?.text = "Server: ${ApiClient.getBaseUrl()}"
-        tvConnectionStatus?.isClickable = true
-        tvConnectionStatus?.setOnClickListener {
-            val input = EditText(this)
-            input.setText(ApiClient.getBaseUrl())
-            AlertDialog.Builder(this)
-                .setTitle("Cloud Backend Server URL")
-                .setMessage("Active Render Server. Must use secure HTTPS.")
-                .setView(input)
-                .setPositiveButton("Save & Switch") { _, _ ->
-                    val newUrl = input.text.toString().trim()
-                    if (ApiClient.setBaseUrl(this, newUrl)) {
-                        tvConnectionStatus?.text = "Server: ${ApiClient.getBaseUrl()}"
-                        Toast.makeText(this, "Updated backend: ${ApiClient.getBaseUrl()}", Toast.LENGTH_LONG).show()
-                    } else {
-                        Toast.makeText(this, "Invalid HTTPS URL format", Toast.LENGTH_SHORT).show()
+        if (com.example.geoalarm.BuildConfig.DEBUG) {
+            tvConnectionStatus?.isClickable = true
+            tvConnectionStatus?.setOnClickListener {
+                val input = EditText(this)
+                input.setText(ApiClient.getBaseUrl())
+                AlertDialog.Builder(this)
+                    .setTitle("Cloud Backend Server URL (Debug Only)")
+                    .setMessage("Active Render Server. Allowed domains: *.onrender.com")
+                    .setView(input)
+                    .setPositiveButton("Save & Switch") { _, _ ->
+                        val newUrl = input.text.toString().trim()
+                        if (ApiClient.setBaseUrl(this, newUrl)) {
+                            tvConnectionStatus?.text = "Server: ${ApiClient.getBaseUrl()}"
+                            Toast.makeText(this, "Updated backend: ${ApiClient.getBaseUrl()}", Toast.LENGTH_LONG).show()
+                        } else {
+                            Toast.makeText(this, "Invalid URL or unauthorized domain", Toast.LENGTH_SHORT).show()
+                        }
                     }
-                }
-                .setNeutralButton("Reset Default") { _, _ ->
-                    ApiClient.setBaseUrl(this, ApiClient.DEFAULT_RENDER_URL)
-                    tvConnectionStatus?.text = "Server: ${ApiClient.getBaseUrl()}"
-                    Toast.makeText(this, "Reset to: ${ApiClient.DEFAULT_RENDER_URL}", Toast.LENGTH_SHORT).show()
-                }
-                .setNegativeButton("Cancel", null)
-                .show()
+                    .setNeutralButton("Reset Default") { _, _ ->
+                        ApiClient.setBaseUrl(this, ApiClient.DEFAULT_RENDER_URL)
+                        tvConnectionStatus?.text = "Server: ${ApiClient.getBaseUrl()}"
+                        Toast.makeText(this, "Reset to: ${ApiClient.DEFAULT_RENDER_URL}", Toast.LENGTH_SHORT).show()
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            }
+        } else {
+            tvConnectionStatus?.isClickable = false
         }
 
         // 1. One-Time Persistent Login Check: If already authenticated, skip login screen
         val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+        val secPrefs = getSharedPreferences("AppSecurityPrefs", Context.MODE_PRIVATE)
         val savedWorkerId = userPrefs.getString("WORKER_ID", "")
-        if (!savedWorkerId.isNullOrEmpty()) {
+        val savedToken = secPrefs.getString("AUTH_TOKEN", "")
+        if (!savedWorkerId.isNullOrEmpty() && !savedToken.isNullOrEmpty()) {
             val savedWorkerName = userPrefs.getString("WORKER_NAME", "Worker") ?: "Worker"
             proceedToMain(savedWorkerId, savedWorkerName)
             return
@@ -111,7 +118,7 @@ class LoginActivity : AppCompatActivity() {
             val password = etPassword.text.toString().trim()
 
             if (username.isEmpty() || !username.all { it.isDigit() }) {
-                etUsername.error = "Please enter a valid numeric Tally Number (e.g. 12345)"
+                etUsername.error = "Please enter your numeric Tally Number"
                 etUsername.requestFocus()
                 return@setOnClickListener
             }
@@ -136,10 +143,16 @@ class LoginActivity : AppCompatActivity() {
                     val devName = rawDevName.replace(Regex("[<>&\"'/]"), "").trim().take(50)
 
                     val loginRequest = MobileLoginRequest(
-                        workerId = username,
+                        tallyId = username,
                         password = password,
-                        deviceId = androidId,
-                        deviceName = devName
+                        device = com.example.geoalarm.network.MobileDeviceRegistration(
+                            deviceIdentifier = androidId,
+                            platform = "ANDROID",
+                            deviceModel = devName,
+                            appVersion = "2.2",
+                            osVersion = android.os.Build.VERSION.RELEASE ?: "14",
+                            pushToken = null
+                        )
                     )
                     
                     val response = ApiClient.apiService.login(loginRequest)
@@ -151,55 +164,44 @@ class LoginActivity : AppCompatActivity() {
 
                         if (response.isSuccessful && response.body() != null) {
                             val body = response.body()!!
-                            val worker = body.worker
-                            val jobs = body.jobs ?: emptyList()
+                            val employee = body.employee
 
-                            if (worker != null) {
-                                // Reset rate limiter on successful authentication
-                                failedLoginAttempts = 0
-                                lockoutUntilTimestamp = 0L
+                            // Reset rate limiter on successful authentication
+                            failedLoginAttempts = 0
+                            lockoutUntilTimestamp = 0L
 
-                                val workerId = worker.tallyId.ifEmpty { worker.id ?: username }
-                                val workerName = worker.name
-                                val workerDesignation = worker.designation ?: "Field Technician"
-                                val workerPhone = worker.phone ?: ""
+                            // Save session authorization tokens in secure preferences
+                            val secPrefs = getSharedPreferences("AppSecurityPrefs", Context.MODE_PRIVATE)
+                            secPrefs.edit()
+                                .putString("AUTH_TOKEN", body.accessToken)
+                                .putString("REFRESH_TOKEN", body.refreshToken)
+                                .apply()
 
-                                // Save strictly verified worker session
-                                userPrefs.edit()
-                                    .putString("WORKER_ID", workerId)
-                                    .putString("WORKER_NAME", workerName)
-                                    .putString("WORKER_DESIGNATION", workerDesignation)
-                                    .putString("WORKER_PHONE", workerPhone)
-                                    .putString("WORKER_TYPE", worker.workerType ?: "")
-                                    .apply()
+                            val workerId = employee?.tallyId ?: username
+                            val workerName = employee?.name ?: "Worker"
 
-                                val acc = body.accommodation
-                                val startLat = acc?.location?.firstOrNull()?.latitude
-                                    ?: (if (jobs.isNotEmpty() && jobs[0].location.isNotEmpty()) jobs[0].location[0].latitude else 0.0)
-                                val startLng = acc?.location?.firstOrNull()?.longitude
-                                    ?: (if (jobs.isNotEmpty() && jobs[0].location.isNotEmpty()) jobs[0].location[0].longitude else 0.0)
+                            // Save strictly verified worker session
+                            userPrefs.edit()
+                                .putString("WORKER_ID", workerId)
+                                .putString("WORKER_TALLY_NO", workerId)
+                                .putString("WORKER_NAME", workerName)
+                                .putString("WORKER_ROLE", employee?.role ?: "WORKER")
+                                .apply()
 
-                                // Dispatch Login event to backend with assigned accommodation coordinates
-                                EventReporter.reportEvent(
-                                    context = this@LoginActivity,
-                                    eventType = "login",
-                                    jobId = acc?.code ?: (if (jobs.isNotEmpty()) jobs[0].jobId else workerId),
-                                    latitude = startLat,
-                                    longitude = startLng
-                                )
+                            // Asynchronously pull initial snapshot from /api/v1/mobile/sync/snapshot
+                            lifecycleScope.launch(Dispatchers.IO) {
+                                SyncEngine.pullSnapshot(this@LoginActivity)
+                            }
 
+                            if (body.mustChangePassword) {
+                                showForcedPasswordChangeDialog(username, password, workerId, workerName)
+                            } else {
                                 Toast.makeText(
                                     this@LoginActivity,
                                     "Welcome, $workerName!",
                                     Toast.LENGTH_SHORT
                                 ).show()
-
                                 proceedToMain(workerId, workerName)
-                            } else {
-                                showAuthErrorDialog(
-                                    title = "Authentication Error",
-                                    message = "Worker data was not returned by server."
-                                )
                             }
                         } else {
                             // Record failed attempt for rate limiting
@@ -210,11 +212,12 @@ class LoginActivity : AppCompatActivity() {
                                 Toast.makeText(this@LoginActivity, "Too many failed login attempts. Locked for 30 seconds.", Toast.LENGTH_LONG).show()
                             }
 
-                            // Parse server error message from JSON errorBody
+                            // Parse server error message from RFC 7807 problem json
                             val statusCode = response.code()
                             var errorMsg = when (statusCode) {
-                                401 -> "Worker '$username' is not registered in the system.\n\nPlease register this worker on the Web Dashboard first."
-                                403 -> "Worker account is deactivated.\n\nPlease contact your supervisor or administrator."
+                                401 -> "Invalid Tally ID or Password.\n\nPlease check your credentials and try again."
+                                403 -> "Access Denied: Account or device restricted."
+                                409 -> "Device Mismatch: Account is registered to another mobile device."
                                 404 -> "Worker record not found on the server."
                                 else -> "Server returned error (HTTP $statusCode)."
                             }
@@ -223,10 +226,16 @@ class LoginActivity : AppCompatActivity() {
                                 val rawErr = response.errorBody()?.string()
                                 if (!rawErr.isNullOrEmpty()) {
                                     val json = JSONObject(rawErr)
-                                    if (json.has("message")) {
-                                        errorMsg = json.getString("message")
-                                    } else if (json.has("detail")) {
-                                        errorMsg = json.getString("detail")
+                                    val code = if (json.has("code")) json.getString("code") else null
+                                    val detail = if (json.has("detail")) json.getString("detail") else null
+                                    val message = if (json.has("message")) json.getString("message") else null
+
+                                    errorMsg = when (code) {
+                                        "DEVICE_MISMATCH" -> "Device Mismatch: This account is bound to another phone.\n\nPlease contact your supervisor or administrator to reset your device binding."
+                                        "ACCOUNT_LOCKED" -> "Account Locked: Too many failed attempts or password expired.\n\nPlease contact your administrator."
+                                        "ACCOUNT_DISABLED" -> "Account Disabled: Please contact your supervisor."
+                                        "INVALID_CREDENTIALS" -> "Invalid Tally ID or Password."
+                                        else -> detail ?: message ?: errorMsg
                                     }
                                 }
                             } catch (parseEx: Exception) {
@@ -234,7 +243,7 @@ class LoginActivity : AppCompatActivity() {
                             }
 
                             showAuthErrorDialog(
-                                title = if (statusCode == 403) "Access Denied" else "Login Failed",
+                                title = if (statusCode == 403 || statusCode == 409) "Access Denied" else "Login Failed",
                                 message = errorMsg
                             )
                         }
@@ -254,6 +263,91 @@ class LoginActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun showForcedPasswordChangeDialog(username: String, currentPass: String, workerId: String, workerName: String) {
+        val layout = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(50, 40, 50, 10)
+        }
+
+        val etNewPwd = EditText(this).apply {
+            hint = "New Secure Password (min 8 chars)"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        val etConfirmPwd = EditText(this).apply {
+            hint = "Confirm New Password"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        layout.addView(etNewPwd)
+        layout.addView(etConfirmPwd)
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Password Change Required")
+            .setMessage("First login detected with company default password. You must set a new password before starting tracking.")
+            .setView(layout)
+            .setCancelable(false)
+            .setPositiveButton("Set Password", null)
+            .create()
+
+        dialog.setOnShowListener {
+            val btn = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            btn.setOnClickListener {
+                val newPwd = etNewPwd.text.toString().trim()
+                val confirmPwd = etConfirmPwd.text.toString().trim()
+
+                if (newPwd.length < 8) {
+                    Toast.makeText(this, "Password must be at least 8 characters", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                if (newPwd == currentPass) {
+                    Toast.makeText(this, "Password cannot be the default password", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                if (!newPwd.any { it.isDigit() } || !newPwd.any { it.isLetter() }) {
+                    Toast.makeText(this, "Password must contain letters and numbers", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                if (newPwd != confirmPwd) {
+                    Toast.makeText(this, "Passwords do not match", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+
+                btn.isEnabled = false
+                btn.text = "Updating..."
+
+                lifecycleScope.launch(Dispatchers.IO) {
+                    try {
+                        val req = com.example.geoalarm.network.MobileChangePasswordRequest(
+                            oldPassword = currentPass,
+                            newPassword = newPwd
+                        )
+                        val res = ApiClient.apiService.changePassword(req)
+                        withContext(Dispatchers.Main) {
+                            if (res.isSuccessful) {
+                                dialog.dismiss()
+                                Toast.makeText(this@LoginActivity, "Password changed successfully! Welcome.", Toast.LENGTH_LONG).show()
+                                lifecycleScope.launch(Dispatchers.IO) {
+                                    SyncEngine.pullSnapshot(this@LoginActivity)
+                                }
+                                proceedToMain(workerId, workerName)
+                            } else {
+                                btn.isEnabled = true
+                                btn.text = "Set Password"
+                                Toast.makeText(this@LoginActivity, "Failed to change password: ${res.code()}", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Main) {
+                            btn.isEnabled = true
+                            btn.text = "Set Password"
+                            Toast.makeText(this@LoginActivity, "Network error: ${e.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            }
+        }
+        dialog.show()
     }
 
     private fun showAuthErrorDialog(title: String, message: String) {
