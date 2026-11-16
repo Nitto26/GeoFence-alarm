@@ -2417,17 +2417,28 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private fun checkOverlayAndAlarmPermissions() {
         if (!Settings.canDrawOverlays(this)) {
+            val isAndroid13Plus = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+            val message = if (isAndroid13Plus) {
+                "Enable 'Display over other apps' to allow instant lock-screen shift and attendance alerts.\n\n" +
+                "ℹ️ If the toggle is grayed out ('Restricted setting'):\n" +
+                "1. Tap 'App Info (Unrestrict)' below\n" +
+                "2. Tap the 3 dots (⋮) in the top-right corner\n" +
+                "3. Tap 'Allow restricted settings'\n" +
+                "4. Return and toggle 'Display over other apps' ON."
+            } else {
+                "Enable 'Display over other apps' for instant lock screen alerts and shift notifications."
+            }
+
             AlertDialog.Builder(this)
-                .setTitle("Permission Needed: Display Over Other Apps")
-                .setMessage("Enable display over other apps for lock screen alerts.")
-                .setPositiveButton("Open Settings") { _, _ ->
-                    val intent = Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:$packageName")
-                    )
-                    startActivity(intent)
+                .setTitle("Display Over Other Apps")
+                .setMessage(message)
+                .setPositiveButton("Overlay Settings") { _, _ ->
+                    openOverlaySettings()
                 }
-                .setNegativeButton("Later", null)
+                .setNeutralButton("App Info (Unrestrict)") { _, _ ->
+                    openAppInfoSettings()
+                }
+                .setNegativeButton("Skip", null)
                 .show()
             return
         }
@@ -2439,15 +2450,46 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     .setTitle("Permission Needed: Full-Screen Alarms")
                     .setMessage("Allow full-screen intents to display warnings on lock screen.")
                     .setPositiveButton("Open Settings") { _, _ ->
-                        val intent = Intent(
-                            Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
-                            Uri.parse("package:$packageName")
-                        )
-                        startActivity(intent)
+                        try {
+                            val intent = Intent(
+                                Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                                Uri.parse("package:$packageName")
+                            )
+                            startActivity(intent)
+                        } catch (_: Exception) {
+                            openAppInfoSettings()
+                        }
                     }
                     .setNegativeButton("Later", null)
                     .show()
             }
+        }
+    }
+
+    private fun openOverlaySettings() {
+        try {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:$packageName")
+            )
+            startActivity(intent)
+        } catch (_: Exception) {
+            try {
+                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
+            } catch (_: Exception) {
+                openAppInfoSettings()
+            }
+        }
+    }
+
+    private fun openAppInfoSettings() {
+        try {
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.parse("package:$packageName")
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Could not open App Info settings", Toast.LENGTH_SHORT).show()
         }
     }
 

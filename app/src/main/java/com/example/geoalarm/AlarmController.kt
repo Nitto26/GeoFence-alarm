@@ -134,10 +134,26 @@ object AlarmController {
             btnTurnOnLocation.visibility = View.VISIBLE
 
             btnTurnOnLocation.setOnClickListener {
-                val settingsIntent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                try {
+                    // Dismiss overlay so the worker can view and interact with Location Settings
+                    if (overlayView != null) {
+                        try {
+                            windowManager?.removeView(overlayView)
+                        } catch (_: Exception) {}
+                        overlayView = null
+                    }
+                    val settingsIntent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(settingsIntent)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error opening location settings: ${e.message}")
+                    try {
+                        context.startActivity(Intent(Settings.ACTION_SETTINGS).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        })
+                    } catch (_: Exception) {}
                 }
-                context.startActivity(settingsIntent)
             }
 
             windowManager?.addView(view, params)

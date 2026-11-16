@@ -83,7 +83,7 @@ class AlarmActivity : AppCompatActivity() {
         tvSubtext.text = "Worker Tracker needs your location to automatically track your attendance and keep you safe."
 
         btnTurnOnLocation.setOnClickListener {
-            requestEnableLocation()
+            openLocationSettings()
         }
 
         // Trigger alarm siren if not already active
@@ -130,6 +130,21 @@ class AlarmActivity : AppCompatActivity() {
             } else {
                 val settingsIntent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
                 startActivity(settingsIntent)
+            }
+        }
+    }
+
+    private fun openLocationSettings() {
+        try {
+            val settingsIntent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(settingsIntent)
+        } catch (e: Exception) {
+            try {
+                startActivity(Intent(Settings.ACTION_SETTINGS))
+            } catch (_: Exception) {
+                requestEnableLocation()
             }
         }
     }
