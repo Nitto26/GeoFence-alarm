@@ -33,18 +33,24 @@
             android:orientation="vertical"
             android:layout_marginTop="28dp">
 
-            <!-- Styled FrameLayout showing Worker Icon instead of plain photo -->
+            <!-- Google-Style Avatar with Worker's Initial Letter -->
             <FrameLayout
+                android:id="@+id/flProfileAvatar"
                 android:layout_width="96dp"
                 android:layout_height="96dp"
-                android:background="@drawable/bg_circle_avatar">
+                android:background="@drawable/bg_circle_avatar_letter">
 
-                <ImageView
-                    android:layout_width="52dp"
-                    android:layout_height="52dp"
-                    android:layout_gravity="center"
-                    android:src="@drawable/ic_badge"
-                    app:tint="@color/brand_blue" />
+                <TextView
+                    android:id="@+id/tvProfileAvatarInitial"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:text="W"
+                    tools:text="D"
+                    android:textColor="#FFFFFF"
+                    android:textSize="42sp"
+                    android:textStyle="bold"
+                    android:includeFontPadding="false" />
             </FrameLayout>
 
             <TextView

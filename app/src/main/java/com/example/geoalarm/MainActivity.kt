@@ -150,6 +150,12 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private var versionClickCount = 0
     private var lastVersionClickTime = 0L
 
+    // Biometric Security Gate (GPay-style app lock on foreground resume)
+    private var isAppLocked = false
+    private var lastBackgroundTimestamp = 0L
+    private var isInternalFlow = false
+    private var lockOverlay: View? = null
+
     // Dynamic Selected Calendar Day
     private var selectedCalendarDay: Int = Calendar.getInstance().get(Calendar.DAY_OF_MONTH)
 
@@ -423,6 +429,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         setupProfileInteractions()
         setupWorkCalendar()
         setupMapDetailsCard()
+        setupBiometricSecurity()
 
         // Sync Clock In / Out UI State from SharedPreferences
         val isClockedIn = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
@@ -611,6 +618,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val tvProfileCompany = findViewById<TextView>(R.id.tvProfileCompany)
         val tvProfileSupervisor = findViewById<TextView>(R.id.tvProfileSupervisor)
         val tvProfileWeeklyOff = findViewById<TextView>(R.id.tvProfileWeeklyOff)
+        val flProfileAvatar = findViewById<FrameLayout>(R.id.flProfileAvatar)
+        val tvProfileAvatarInitial = findViewById<TextView>(R.id.tvProfileAvatarInitial)
 
         val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
         val supervisorName = userPrefs.getString("SUPERVISOR_NAME", "") ?: ""
@@ -625,6 +634,22 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         tvPayrollAmount?.text = userPrefs.getString("WORKER_PAYROLL", "₹32,500") ?: "₹32,500"
 
         tvProfileName?.text = loggedInWorkerName
+
+        val initialLetter = loggedInWorkerName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "W"
+        tvProfileAvatarInitial?.text = initialLetter
+
+        val googleColors = listOf(
+            Color.parseColor("#1A73E8"), // Google Blue
+            Color.parseColor("#0F9D58"), // Google Green
+            Color.parseColor("#D93025"), // Google Red
+            Color.parseColor("#E37400"), // Google Orange
+            Color.parseColor("#8E24AA"), // Google Purple
+            Color.parseColor("#00897B"), // Google Teal
+            Color.parseColor("#3949AB"), // Google Indigo
+            Color.parseColor("#C2185B")  // Google Pink
+        )
+        val colorIndex = Math.abs(loggedInWorkerName.trim().hashCode()) % googleColors.size
+        flProfileAvatar?.backgroundTintList = ColorStateList.valueOf(googleColors[colorIndex])
         tvProfileTallyNo?.text = "ID: $displayTally"
         tvProfileDepartment?.text = if (loggedInWorkerDesignation.isNotEmpty()) loggedInWorkerDesignation else "Field Worker"
         if (loggedInWorkerPhone.isNotEmpty()) {
@@ -2324,7 +2349,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
                         if (response.isSuccessful) {
                             dialog.dismiss()
-                            Toast.makeText(this@MainActivity, "✓ Password changed successfully!", Toast.LENGTH_LONG).show()
+                            Toast.makeText(this@MainActivity, "✓ Password changed successfully in database!", Toast.LENGTH_LONG).show()
                             EventReporter.addLocalLog("Security: Password updated for $loggedInWorkerName")
                         } else {
                             var errMsg = "Failed to update password."
@@ -2332,8 +2357,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                                 val errBody = response.errorBody()?.string()
                                 if (!errBody.isNullOrEmpty()) {
                                     val json = org.json.JSONObject(errBody)
-                                    if (json.has("message")) errMsg = json.getString("message")
-                                    else if (json.has("detail")) errMsg = json.getString("detail")
+                                    val detail = if (json.has("detail")) json.optString("detail") else null
+                                    val message = if (json.has("message")) json.optString("message") else null
+                                    val code = if (json.has("code")) json.optString("code") else null
+                                    errMsg = when (code) {
+                                        "INVALID_CURRENT_PASSWORD" -> "Current password is incorrect. Please check and try again."
+                                        "CANNOT_REUSE_DEFAULT_PASSWORD" -> "New password cannot be the company default password."
+                                        "PASSWORD_TOO_SHORT" -> "New password is too short. Must be at least 8 characters."
+                                        "DEVICE_NOT_ACTIVE" -> "Device session expired or revoked. Please log in again."
+                                        else -> detail?.takeIf { it.isNotEmpty() } ?: message?.takeIf { it.isNotEmpty() } ?: "Error (${response.code()}): Failed to update password."
+                                    }
                                 }
                             } catch (e: Exception) {
                                 errMsg = "Server error (${response.code()})"
@@ -2450,6 +2483,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     .setTitle("Permission Needed: Full-Screen Alarms")
                     .setMessage("Allow full-screen intents to display warnings on lock screen.")
                     .setPositiveButton("Open Settings") { _, _ ->
+                        isInternalFlow = true
                         try {
                             val intent = Intent(
                                 Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
@@ -2467,6 +2501,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     private fun openOverlaySettings() {
+        isInternalFlow = true
         try {
             val intent = Intent(
                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
@@ -2483,6 +2518,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     private fun openAppInfoSettings() {
+        isInternalFlow = true
         try {
             val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                 data = Uri.parse("package:$packageName")
@@ -2506,6 +2542,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }.addOnFailureListener { exception ->
             if (exception is ResolvableApiException) {
                 try {
+                    isInternalFlow = true
                     val intentSenderRequest = IntentSenderRequest.Builder(exception.resolution).build()
                     resolutionForResult.launch(intentSenderRequest)
                 } catch (sendEx: Exception) {
@@ -2528,6 +2565,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             .setCancelable(false)
             .setPositiveButton("Turn On") { _, _ ->
                 isLocationPromptShowing = false
+                isInternalFlow = true
                 try {
                     startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
                 } catch (_: Exception) {}
@@ -2807,18 +2845,85 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
     }
 
-    override fun onResume() {
-        super.onResume()
+    // --- Biometric Security Lifecycle Gating ---
+
+    private fun setupBiometricSecurity() {
+        lockOverlay = findViewById(R.id.llBiometricLockOverlay)
+        findViewById<MaterialButton>(R.id.btnUnlockBiometric)?.setOnClickListener {
+            triggerBiometricUnlock()
+        }
+
+        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (isAppLocked) {
+                    moveTaskToBack(true)
+                } else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
+                }
+            }
+        })
+    }
+
+    private fun triggerBiometricUnlock() {
+        if (!com.example.geoalarm.security.BiometricAuthManager.canAuthenticate(this)) {
+            unlockApp()
+            return
+        }
+
+        isAppLocked = true
+        lockOverlay?.visibility = View.VISIBLE
+
+        com.example.geoalarm.security.BiometricAuthManager.promptBiometricUnlock(
+            activity = this,
+            title = "Unlock GeoAlarm",
+            subtitle = "Verify fingerprint, face, or PIN to continue",
+            onSuccess = {
+                unlockApp()
+            },
+            onError = { _, _ ->
+                lockOverlay?.visibility = View.VISIBLE
+            }
+        )
+    }
+
+    private fun unlockApp() {
+        isAppLocked = false
+        lockOverlay?.visibility = View.GONE
+
         val isClockedIn = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
             .getBoolean("IS_CLOCKED_IN", false)
         updateClockInOutUi(isClockedIn)
-
-        // Mandatory Location Check on App Open/Resume: Prompt if off, finish if rejected
         checkLocationEnabledOrPrompt()
-
         startLiveLocationTracking()
         syncAndRefreshServerData(showUserFeedback = false)
         ShiftAlarmScheduler.scheduleNextShiftAlarm(this)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (isInternalFlow) {
+            isInternalFlow = false
+            unlockApp()
+            return
+        }
+
+        if (isAppLocked && com.example.geoalarm.security.BiometricAuthManager.canAuthenticate(this)) {
+            triggerBiometricUnlock()
+            return
+        } else {
+            unlockApp()
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        lastBackgroundTimestamp = System.currentTimeMillis()
+        if (!isInternalFlow && com.example.geoalarm.security.BiometricAuthManager.canAuthenticate(this)) {
+            isAppLocked = true
+            lockOverlay?.visibility = View.VISIBLE
+        }
     }
 
     override fun onDestroy() {

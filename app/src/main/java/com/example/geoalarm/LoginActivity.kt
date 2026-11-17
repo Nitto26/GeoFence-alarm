@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.view.View
 import java.util.UUID
 import android.text.method.HideReturnsTransformationMethod
 import android.text.method.PasswordTransformationMethod
@@ -80,15 +81,23 @@ class LoginActivity : AppCompatActivity() {
             tvConnectionStatus?.isClickable = false
         }
 
-        // 1. One-Time Persistent Login Check: If already authenticated, skip login screen
+        val btnBiometricQuickUnlock = findViewById<MaterialButton>(R.id.btnBiometricQuickUnlock)
+
+        // 1. One-Time Persistent Login Check: If already authenticated, prompt biometrics before entering
         val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
         val secPrefs = getSharedPreferences("AppSecurityPrefs", Context.MODE_PRIVATE)
         val savedWorkerId = userPrefs.getString("WORKER_ID", "")
         val savedToken = secPrefs.getString("AUTH_TOKEN", "")
         if (!savedWorkerId.isNullOrEmpty() && !savedToken.isNullOrEmpty()) {
             val savedWorkerName = userPrefs.getString("WORKER_NAME", "Worker") ?: "Worker"
-            proceedToMain(savedWorkerId, savedWorkerName)
-            return
+            etUsername.setText(savedWorkerId)
+            btnBiometricQuickUnlock?.visibility = View.VISIBLE
+            btnBiometricQuickUnlock?.setOnClickListener {
+                triggerBiometricLogin(savedWorkerId, savedWorkerName)
+            }
+
+            // Immediately trigger biometric prompt on launch (just like GPay)
+            triggerBiometricLogin(savedWorkerId, savedWorkerName)
         }
 
         // Password visibility toggle
@@ -266,87 +275,135 @@ class LoginActivity : AppCompatActivity() {
     }
 
     private fun showForcedPasswordChangeDialog(username: String, currentPass: String, workerId: String, workerName: String) {
-        val layout = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-            setPadding(50, 40, 50, 10)
-        }
-
-        val etNewPwd = EditText(this).apply {
-            hint = "New Secure Password (min 8 chars)"
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-        }
-        val etConfirmPwd = EditText(this).apply {
-            hint = "Confirm New Password"
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-        }
-        layout.addView(etNewPwd)
-        layout.addView(etConfirmPwd)
-
+        val dialogView = layoutInflater.inflate(R.layout.dialog_first_login_password, null)
         val dialog = AlertDialog.Builder(this)
-            .setTitle("Password Change Required")
-            .setMessage("First login detected with company default password. You must set a new password before starting tracking.")
-            .setView(layout)
+            .setView(dialogView)
             .setCancelable(false)
-            .setPositiveButton("Set Password", null)
             .create()
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
 
-        dialog.setOnShowListener {
-            val btn = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
-            btn.setOnClickListener {
-                val newPwd = etNewPwd.text.toString().trim()
-                val confirmPwd = etConfirmPwd.text.toString().trim()
+        val etCurrentPwd = dialogView.findViewById<EditText>(R.id.etFirstLoginCurrentPassword)
+        val etNewPwd = dialogView.findViewById<EditText>(R.id.etFirstLoginNewPassword)
+        val etConfirmPwd = dialogView.findViewById<EditText>(R.id.etFirstLoginConfirmPassword)
+        val tvError = dialogView.findViewById<TextView>(R.id.tvFirstLoginPasswordError)
+        val btnCancel = dialogView.findViewById<MaterialButton>(R.id.btnCancelFirstLoginPassword)
+        val btnSubmit = dialogView.findViewById<MaterialButton>(R.id.btnSubmitFirstLoginPassword)
 
-                if (newPwd.length < 8) {
-                    Toast.makeText(this, "Password must be at least 8 characters", Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }
-                if (newPwd == currentPass) {
-                    Toast.makeText(this, "Password cannot be the default password", Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }
-                if (!newPwd.any { it.isDigit() } || !newPwd.any { it.isLetter() }) {
-                    Toast.makeText(this, "Password must contain letters and numbers", Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }
-                if (newPwd != confirmPwd) {
-                    Toast.makeText(this, "Passwords do not match", Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }
+        // Pre-fill with the default/entered password they used to log in
+        etCurrentPwd.setText(currentPass)
 
-                btn.isEnabled = false
-                btn.text = "Updating..."
+        btnCancel.setOnClickListener {
+            // Worker cancelled forced password setup - clear partial session and return to login
+            val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+            val secPrefs = getSharedPreferences("AppSecurityPrefs", Context.MODE_PRIVATE)
+            userPrefs.edit().clear().apply()
+            secPrefs.edit().clear().apply()
+            dialog.dismiss()
+            Toast.makeText(this, "Password setup cancelled. Please sign in again.", Toast.LENGTH_SHORT).show()
+        }
 
-                lifecycleScope.launch(Dispatchers.IO) {
-                    try {
-                        val req = com.example.geoalarm.network.MobileChangePasswordRequest(
-                            oldPassword = currentPass,
-                            newPassword = newPwd
-                        )
-                        val res = ApiClient.apiService.changePassword(req)
-                        withContext(Dispatchers.Main) {
-                            if (res.isSuccessful) {
-                                dialog.dismiss()
-                                Toast.makeText(this@LoginActivity, "Password changed successfully! Welcome.", Toast.LENGTH_LONG).show()
-                                lifecycleScope.launch(Dispatchers.IO) {
-                                    SyncEngine.pullSnapshot(this@LoginActivity)
-                                }
-                                proceedToMain(workerId, workerName)
-                            } else {
-                                btn.isEnabled = true
-                                btn.text = "Set Password"
-                                Toast.makeText(this@LoginActivity, "Failed to change password: ${res.code()}", Toast.LENGTH_LONG).show()
+        btnSubmit.setOnClickListener {
+            val enteredCurrentPass = etCurrentPwd.text.toString().trim().ifEmpty { currentPass }
+            val newPwd = etNewPwd.text.toString().trim()
+            val confirmPwd = etConfirmPwd.text.toString().trim()
+
+            tvError.visibility = View.GONE
+
+            if (enteredCurrentPass.isEmpty()) {
+                tvError.text = "Please enter your current default password."
+                tvError.visibility = View.VISIBLE
+                etCurrentPwd.requestFocus()
+                return@setOnClickListener
+            }
+
+            if (newPwd.isEmpty()) {
+                tvError.text = "Please enter a new password."
+                tvError.visibility = View.VISIBLE
+                etNewPwd.requestFocus()
+                return@setOnClickListener
+            }
+
+            if (newPwd.length < 8) {
+                tvError.text = "New password must be at least 8 characters long."
+                tvError.visibility = View.VISIBLE
+                etNewPwd.requestFocus()
+                return@setOnClickListener
+            }
+
+            if (newPwd == enteredCurrentPass) {
+                tvError.text = "New password cannot be the company default password."
+                tvError.visibility = View.VISIBLE
+                etNewPwd.requestFocus()
+                return@setOnClickListener
+            }
+
+            if (!newPwd.any { it.isLetter() } || !newPwd.any { it.isDigit() }) {
+                tvError.text = "New password must contain both letters and numbers."
+                tvError.visibility = View.VISIBLE
+                etNewPwd.requestFocus()
+                return@setOnClickListener
+            }
+
+            if (newPwd != confirmPwd) {
+                tvError.text = "New passwords do not match."
+                tvError.visibility = View.VISIBLE
+                etConfirmPwd.requestFocus()
+                return@setOnClickListener
+            }
+
+            btnSubmit.isEnabled = false
+            btnSubmit.text = "Setting Password..."
+
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    val req = com.example.geoalarm.network.MobileChangePasswordRequest(
+                        oldPassword = enteredCurrentPass,
+                        newPassword = newPwd
+                    )
+                    val res = ApiClient.apiService.changePassword(req)
+                    withContext(Dispatchers.Main) {
+                        if (res.isSuccessful) {
+                            dialog.dismiss()
+                            Toast.makeText(this@LoginActivity, "✓ Password set successfully! Welcome, $workerName.", Toast.LENGTH_LONG).show()
+                            lifecycleScope.launch(Dispatchers.IO) {
+                                SyncEngine.pullSnapshot(this@LoginActivity)
                             }
+                            proceedToMain(workerId, workerName)
+                        } else {
+                            btnSubmit.isEnabled = true
+                            btnSubmit.text = "Set Password"
+                            var errMsg = "Failed to set password (${res.code()})"
+                            try {
+                                val errBody = res.errorBody()?.string()
+                                if (!errBody.isNullOrEmpty()) {
+                                    val json = JSONObject(errBody)
+                                    val detail = if (json.has("detail")) json.optString("detail") else null
+                                    val message = if (json.has("message")) json.optString("message") else null
+                                    val code = if (json.has("code")) json.optString("code") else null
+                                    errMsg = when (code) {
+                                        "INVALID_CURRENT_PASSWORD" -> "Current default password does not match account."
+                                        "CANNOT_REUSE_DEFAULT_PASSWORD" -> "New password cannot be the company default password."
+                                        "PASSWORD_TOO_SHORT" -> "New password must be at least 8 characters long."
+                                        "DEVICE_NOT_ACTIVE" -> "Device session expired or revoked. Please sign in again."
+                                        else -> detail?.takeIf { it.isNotEmpty() } ?: message?.takeIf { it.isNotEmpty() } ?: errMsg
+                                    }
+                                }
+                            } catch (_: Exception) {}
+                            tvError.text = errMsg
+                            tvError.visibility = View.VISIBLE
                         }
-                    } catch (e: Exception) {
-                        withContext(Dispatchers.Main) {
-                            btn.isEnabled = true
-                            btn.text = "Set Password"
-                            Toast.makeText(this@LoginActivity, "Network error: ${e.message}", Toast.LENGTH_LONG).show()
-                        }
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        btnSubmit.isEnabled = true
+                        btnSubmit.text = "Set Password"
+                        tvError.text = "Network error: ${e.message ?: "Could not reach server"}"
+                        tvError.visibility = View.VISIBLE
                     }
                 }
             }
         }
+
         dialog.show()
     }
 
@@ -366,6 +423,25 @@ class LoginActivity : AppCompatActivity() {
             .setPositiveButton("Retry", null)
             .setIcon(android.R.drawable.ic_dialog_alert)
             .show()
+    }
+
+    private fun triggerBiometricLogin(workerId: String, workerName: String) {
+        if (!com.example.geoalarm.security.BiometricAuthManager.canAuthenticate(this)) {
+            proceedToMain(workerId, workerName)
+            return
+        }
+
+        com.example.geoalarm.security.BiometricAuthManager.promptBiometricUnlock(
+            activity = this,
+            title = "Unlock GeoAlarm",
+            subtitle = "Verify fingerprint or PIN for $workerName",
+            onSuccess = {
+                proceedToMain(workerId, workerName)
+            },
+            onError = { _, _ ->
+                Toast.makeText(this, "Biometric authentication cancelled. Tap below or log in with password.", Toast.LENGTH_SHORT).show()
+            }
+        )
     }
 
     private fun proceedToMain(workerId: String, workerName: String) {
