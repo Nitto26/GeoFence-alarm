@@ -57,7 +57,7 @@ object WorkNotificationManager {
         }
         lastNotifiedStateKey = key
 
-        val title = if (isAuto) "Shift Auto-Started" else "Clocked In"
+        val title = if (isAuto) "Work Time Auto-Started" else "Work Time Started"
         val message = "Shift tracking active for $jobId. Attendance & payroll running."
         showNotification(context, NOTIF_ID_CLOCK_IN, title, message)
     }
@@ -67,7 +67,7 @@ object WorkNotificationManager {
         val key = "CLOCK_OUT"
         lastNotifiedStateKey = key
 
-        val title = "Clocked Out — Shift Ended"
+        val title = "Work Time Ended — Shift Ended"
         val message = if (durationStr.isNotEmpty()) {
             "Shift ended for $jobId. Worked: $durationStr. Attendance recorded."
         } else {

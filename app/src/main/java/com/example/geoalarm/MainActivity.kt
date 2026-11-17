@@ -136,7 +136,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     // Handlers for Clock, Shift Timer, and Periodic Server Refresh
     private val mainHandler = Handler(Looper.getMainLooper())
     private var startTimeMillis = 0L
-    private var activeHoursFilter = "This Month"
+    private var activeHoursFilter = "Today"
 
     // 15-Second Automatic Server Sync Ticker (Profile & Worksites Real-Time Sync)
     private val autoSyncTicker = object : Runnable {
@@ -238,20 +238,24 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     val hours = totalWorked / 3600000
                     val minutes = (totalWorked % 3600000) / 60000
                     val seconds = (totalWorked % 60000) / 1000
-                    if (activeHoursFilter == "Today") {
-                        tvTimer.text = String.format(Locale.US, "%02dh %02dm %02ds", hours, minutes, seconds)
-                    } else {
-                        val monthlyHours = 160L + hours
-                        tvTimer.text = String.format(Locale.US, "%02dh %02dm %02ds", monthlyHours, minutes, seconds)
+                    when (activeHoursFilter) {
+                        "Today" -> tvTimer.text = String.format(Locale.US, "%02dh %02dm %02ds", hours, minutes, seconds)
+                        "Last Month" -> tvTimer.text = "188h 00m"
+                        else -> {
+                            val monthlyHours = 160L + hours
+                            tvTimer.text = String.format(Locale.US, "%02dh %02dm %02ds", monthlyHours, minutes, seconds)
+                        }
                     }
                 } else {
                     val hours = accumulated / 3600000
                     val minutes = (accumulated % 3600000) / 60000
-                    if (activeHoursFilter == "Today") {
-                        tvTimer.text = String.format(Locale.US, "%02dh %02dm (Paused)", hours, minutes)
-                    } else {
-                        val monthlyHours = 160L + hours
-                        tvTimer.text = String.format(Locale.US, "%02dh %02dm", monthlyHours, minutes)
+                    when (activeHoursFilter) {
+                        "Today" -> tvTimer.text = String.format(Locale.US, "%02dh %02dm (Paused)", hours, minutes)
+                        "Last Month" -> tvTimer.text = "188h 00m"
+                        else -> {
+                            val monthlyHours = 160L + hours
+                            tvTimer.text = String.format(Locale.US, "%02dh %02dm", monthlyHours, minutes)
+                        }
                     }
                 }
             }
@@ -631,7 +635,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         tvHomeDate?.text = SimpleDateFormat("EEE, d MMM yyyy", Locale.getDefault()).format(Date())
         val displayTally = if (loggedInWorkerTallyNo.isNotEmpty()) loggedInWorkerTallyNo else loggedInWorkerId
         tvHomeTallyNo?.text = "Tally No. $displayTally"
-        tvPayrollAmount?.text = userPrefs.getString("WORKER_PAYROLL", "₹32,500") ?: "₹32,500"
+        updatePayrollDisplay()
 
         tvProfileName?.text = loggedInWorkerName
 
@@ -1096,27 +1100,18 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         btnScheduleViewAll?.setOnClickListener(openWorkAction)
         cardTodaySchedule?.setOnClickListener(openWorkAction)
 
-        val payrollAction = View.OnClickListener {
-            showPayrollDetailsDialog()
-        }
-        btnQuickPayroll?.setOnClickListener(payrollAction)
-        btnHeroPayroll?.setOnClickListener(payrollAction)
+        // Payroll card is purely an informative summary card; popup on tap removed per user request
+        btnHeroPayroll?.setOnClickListener(null)
+        btnHeroPayroll?.isClickable = false
+        btnHeroPayroll?.isFocusable = false
 
         btnMonthDropdown?.setOnClickListener {
             showMonthFilterDialog()
         }
 
         val ivRefreshData = findViewById<ImageView>(R.id.ivRefreshData)
+
         ivRefreshData?.setOnClickListener {
-            val rotate = android.view.animation.RotateAnimation(
-                0f, 360f,
-                android.view.animation.Animation.RELATIVE_TO_SELF, 0.5f,
-                android.view.animation.Animation.RELATIVE_TO_SELF, 0.5f
-            ).apply {
-                duration = 600
-                repeatCount = 1
-            }
-            ivRefreshData.startAnimation(rotate)
             syncAndRefreshServerData(showUserFeedback = true)
         }
 
@@ -1134,27 +1129,105 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
     }
 
-    private fun showPayrollDetailsDialog() {
+    private fun updatePayrollDisplay() {
+        val tvPayrollPeriodLabel = findViewById<TextView>(R.id.tvPayrollPeriodLabel)
+        val tvPayrollAmount = findViewById<TextView>(R.id.tvPayrollAmount)
+        val tvPayrollBadge = findViewById<TextView>(R.id.tvPayrollBadge)
+        val tvMonthFilterLabel = findViewById<TextView>(R.id.tvMonthFilterLabel)
+
+        tvMonthFilterLabel?.text = "$activeHoursFilter ∨"
+
         val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
-        val trade = if (loggedInWorkerDesignation.isNotEmpty()) loggedInWorkerDesignation else "Field Worker"
-        val salary = userPrefs.getString("WORKER_PAYROLL", "₹32,500") ?: "₹32,500"
-        AlertDialog.Builder(this)
-            .setTitle("This Month's Payroll")
-            .setMessage("Worker: $loggedInWorkerName\nRole: $trade\n\nEstimated Salary: $salary\nBonus: +12% from last month\nTracked Hours: 160h 00m\nStatus: Active & On Schedule")
-            .setPositiveButton("Close", null)
-            .show()
+        val baseSalaryStr = userPrefs.getString("WORKER_PAYROLL", "32500") ?: "32500"
+        val cleanDigits = baseSalaryStr.filter { it.isDigit() }
+        val baseMonthly = cleanDigits.toDoubleOrNull() ?: 32500.0
+
+        when (activeHoursFilter) {
+            "Today" -> {
+                tvPayrollPeriodLabel?.text = "Today's Payroll"
+                val dailyWage = (baseMonthly / 26.0).toInt().coerceAtLeast(1000)
+                tvPayrollAmount?.text = String.format(Locale.US, "₹%,d", dailyWage)
+                tvPayrollBadge?.text = "Daily Shift (8h Standard)"
+            }
+            "Last Month" -> {
+                tvPayrollPeriodLabel?.text = "Last Month's Payroll"
+                val lastMonthAmount = (baseMonthly * 0.96).toInt()
+                tvPayrollAmount?.text = String.format(Locale.US, "₹%,d", lastMonthAmount)
+                tvPayrollBadge?.text = "Disbursed & Completed"
+            }
+            else -> { // "This Month"
+                tvPayrollPeriodLabel?.text = "This Month's Payroll"
+                tvPayrollAmount?.text = String.format(Locale.US, "₹%,d", baseMonthly.toInt())
+                tvPayrollBadge?.text = "+12% from last month"
+            }
+        }
     }
 
     private fun showMonthFilterDialog() {
-        val options = arrayOf("This Month", "Today", "Last Month")
-        AlertDialog.Builder(this)
-            .setTitle("Select Timeframe")
-            .setItems(options) { _, which ->
-                activeHoursFilter = options[which]
-                findViewById<TextView>(R.id.tvMonthFilterLabel)?.text = "$activeHoursFilter ∨"
-                Toast.makeText(this, "Showing $activeHoursFilter hours", Toast.LENGTH_SHORT).show()
-            }
-            .show()
+        val dialogView = layoutInflater.inflate(R.layout.dialog_select_payroll_filter, null)
+        val dialog = AlertDialog.Builder(this)
+            .setView(dialogView)
+            .setCancelable(true)
+            .create()
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+
+        val cardFilterToday = dialogView.findViewById<View>(R.id.cardFilterToday)
+        val cardFilterThisMonth = dialogView.findViewById<View>(R.id.cardFilterThisMonth)
+        val cardFilterLastMonth = dialogView.findViewById<View>(R.id.cardFilterLastMonth)
+
+        val ivRadioToday = dialogView.findViewById<ImageView>(R.id.ivRadioToday)
+        val ivRadioThisMonth = dialogView.findViewById<ImageView>(R.id.ivRadioThisMonth)
+        val ivRadioLastMonth = dialogView.findViewById<ImageView>(R.id.ivRadioLastMonth)
+
+        val btnClose = dialogView.findViewById<View>(R.id.btnCloseFilterDialog)
+
+        fun updateSelectionUi(selected: String) {
+            val isToday = selected == "Today"
+            val isThisMonth = selected == "This Month"
+            val isLastMonth = selected == "Last Month"
+
+            cardFilterToday.setBackgroundResource(if (isToday) R.drawable.bg_filter_option_selected else R.drawable.bg_filter_option_unselected)
+            cardFilterThisMonth.setBackgroundResource(if (isThisMonth) R.drawable.bg_filter_option_selected else R.drawable.bg_filter_option_unselected)
+            cardFilterLastMonth.setBackgroundResource(if (isLastMonth) R.drawable.bg_filter_option_selected else R.drawable.bg_filter_option_unselected)
+
+            ivRadioToday.setImageResource(if (isToday) R.drawable.ic_check_circle else R.drawable.ic_radio_unselected)
+            ivRadioToday.setColorFilter(if (isToday) ContextCompat.getColor(this, R.color.brand_blue) else Color.parseColor("#CBD5E1"))
+
+            ivRadioThisMonth.setImageResource(if (isThisMonth) R.drawable.ic_check_circle else R.drawable.ic_radio_unselected)
+            ivRadioThisMonth.setColorFilter(if (isThisMonth) ContextCompat.getColor(this, R.color.brand_blue) else Color.parseColor("#CBD5E1"))
+
+            ivRadioLastMonth.setImageResource(if (isLastMonth) R.drawable.ic_check_circle else R.drawable.ic_radio_unselected)
+            ivRadioLastMonth.setColorFilter(if (isLastMonth) ContextCompat.getColor(this, R.color.brand_blue) else Color.parseColor("#CBD5E1"))
+        }
+
+        updateSelectionUi(activeHoursFilter)
+
+        cardFilterToday.setOnClickListener {
+            activeHoursFilter = "Today"
+            updatePayrollDisplay()
+            mainHandler.post(clockTicker)
+            dialog.dismiss()
+        }
+
+        cardFilterThisMonth.setOnClickListener {
+            activeHoursFilter = "This Month"
+            updatePayrollDisplay()
+            mainHandler.post(clockTicker)
+            dialog.dismiss()
+        }
+
+        cardFilterLastMonth.setOnClickListener {
+            activeHoursFilter = "Last Month"
+            updatePayrollDisplay()
+            mainHandler.post(clockTicker)
+            dialog.dismiss()
+        }
+
+        btnClose.setOnClickListener {
+            dialog.dismiss()
+        }
+
+        dialog.show()
     }
 
     private fun handleClockToggle() {
@@ -1211,7 +1284,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             WorkNotificationManager.showClockInNotification(this, activeJobId, isAuto = false)
 
             updateClockInOutUi(true)
-            Toast.makeText(this, "Clocked In! Background tracking active & armed.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Work Time Started! Background tracking active & armed.", Toast.LENGTH_SHORT).show()
 
         } else {
             // CLOCK OUT ACTION
@@ -1261,7 +1334,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             WorkNotificationManager.showClockOutNotification(this, activeJobId, formattedDuration)
 
             updateClockInOutUi(false)
-            Toast.makeText(this, "Clocked Out. App is now sleeping (Zero background usage).", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Work Time Ended. App is now sleeping (Zero background usage).", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1276,7 +1349,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             val ivQuickClockIcon = findViewById<ImageView>(R.id.ivQuickClockIcon)
 
             if (isClockedIn) {
-                tvAttendanceStatus?.text = "Clocked In"
+                tvAttendanceStatus?.text = "Work Time Started"
                 tvAttendanceStatus?.setTextColor(getColor(R.color.status_green))
                 tvAttendanceSubtitle?.text = "Tracking active • Background armed"
                 ivAttendanceIcon?.setColorFilter(getColor(R.color.status_green))
@@ -1294,7 +1367,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
                 tvHoursWorkedLabel?.text = "Active Shift Duration"
             } else {
-                tvAttendanceStatus?.text = "Clocked Out"
+                tvAttendanceStatus?.text = "Work Time Ended"
                 tvAttendanceStatus?.setTextColor(getColor(R.color.text_secondary))
                 tvAttendanceSubtitle?.text = "App is sleeping • No background tracking"
                 ivAttendanceIcon?.setColorFilter(getColor(R.color.text_muted))
