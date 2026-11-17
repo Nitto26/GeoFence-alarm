@@ -142,6 +142,9 @@ object SyncEngine {
      */
     fun triggerSync(context: Context, onComplete: ((Boolean) -> Unit)? = null) {
         val appCtx = context.applicationContext
+        if (appContext == null) {
+            init(appCtx)
+        }
         if (isCurrentlySyncing) {
             onComplete?.invoke(false)
             return
@@ -170,8 +173,11 @@ object SyncEngine {
                     Log.d(TAG, "Flushing batch of ${unsyncedRecords.size} events to /api/v1/mobile/events/batch...")
 
                     val eventItems = unsyncedRecords.map { record ->
+                        val sanitizedEventId = sanitizeUuid(record.eventUuid) ?: UUID.randomUUID().toString()
+                        val sanitizedJobId = sanitizeUuid(record.jobId)
+
                         MobileEventItem(
-                            eventId = record.eventUuid,
+                            eventId = sanitizedEventId,
                             eventType = record.eventType.uppercase(),
                             eventTimestampUtc = record.timestamp,
                             locationCapturedAtUtc = record.timestamp,
@@ -180,7 +186,7 @@ object SyncEngine {
                             accuracyMeters = 5.0f,
                             isMockLocation = record.eventType.equals("MOCK_LOCATION_DETECTED", ignoreCase = true),
                             sequenceNumber = record.id.toInt(),
-                            jobId = record.jobId,
+                            jobId = sanitizedJobId,
                             jobItemId = null,
                             accommodationId = null
                         )
@@ -193,6 +199,8 @@ object SyncEngine {
                     )
 
                     ApiClient.init(appCtx)
+                    val reqJson = gson.toJson(request)
+                    Log.d(TAG, "EventBatchRequest payload: $reqJson")
                     val response = ApiClient.apiService.postLocationEvents(request)
 
                     if (response.isSuccessful && response.body() != null) {
@@ -208,7 +216,8 @@ object SyncEngine {
                             pullDeltaChanges(appCtx)
                         }
                     } else {
-                        Log.e(TAG, "Server responded with error HTTP ${response.code()} on event batch")
+                        val errBody = try { response.errorBody()?.string() } catch (ex: Exception) { null }
+                        Log.e(TAG, "Server responded with error HTTP ${response.code()} on event batch: $errBody")
                         break
                     }
                 }
@@ -551,5 +560,14 @@ object SyncEngine {
         val activeNetwork = cm.activeNetwork ?: return false
         val capabilities = cm.getNetworkCapabilities(activeNetwork) ?: return false
         return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    fun sanitizeUuid(value: String?): String? {
+        if (value.isNullOrBlank()) return null
+        return try {
+            UUID.fromString(value.trim()).toString()
+        } catch (e: Exception) {
+            null
+        }
     }
 }

@@ -846,7 +846,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val logs = EventReporter.liveSystemLogs
 
         val builder = AlertDialog.Builder(context)
-        builder.setTitle("Ã¢Å¡Â¡ System Logs & Activity")
+        builder.setTitle("⚡ System Logs & Activity")
 
         val scrollView = ScrollView(context)
         val container = LinearLayout(context).apply {
@@ -867,7 +867,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     textSize = 12.5f
                     typeface = Typeface.MONOSPACE
                     setPadding(0, 8, 0, 8)
-                    setTextColor(if (log.contains("Ã¢Å¡Â ") || log.contains("location_off")) Color.parseColor("#E11D48") else Color.parseColor("#334155"))
+                    setTextColor(if (log.contains("⚠️") || log.contains("location_off")) Color.parseColor("#E11D48") else Color.parseColor("#334155"))
                 }
                 container.addView(logItem)
             }
@@ -939,10 +939,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     tvTime?.text = rec.timestamp.replace("T", " ").take(19)
 
                     if (rec.isSynced) {
-                        tvStatus?.text = "Ã¢Å“â€œ SYNCED"
+                        tvStatus?.text = "✓ SYNCED"
                         tvStatus?.setTextColor(Color.parseColor("#16A34A"))
                     } else {
-                        tvStatus?.text = "Ã¢ÂÂ³ PENDING"
+                        tvStatus?.text = "⏳ PENDING"
                         tvStatus?.setTextColor(Color.parseColor("#D97706"))
                     }
 
@@ -964,7 +964,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     btnForceSyncDialog.text = "Force Sync Now"
                     refreshAuditUi()
                     if (success) {
-                        Toast.makeText(context, "Ã¢Å“â€œ Offline sync complete! All events delivered.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "✓ Offline sync complete! All events delivered.", Toast.LENGTH_SHORT).show()
                     } else {
                         Toast.makeText(context, "Sync paused (check network connection)", Toast.LENGTH_SHORT).show()
                     }
