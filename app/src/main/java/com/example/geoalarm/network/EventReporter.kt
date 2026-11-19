@@ -55,13 +55,19 @@ object EventReporter {
         val effectiveInsideJobId = currentInsideJobId ?: persistedInsideJobId
         val effectiveLastEventType = lastNonPingEventType ?: sharedPrefs.getString("LAST_NON_PING_EVENT_TYPE", null)
 
+        val isAccom = eventType.lowercase().contains("accommodation") || eventType.lowercase().contains("camp")
+        val effectiveJobId = if (isAccom && normalizedJobId == null) "ACCOMMODATION" else normalizedJobId
+
         val normalizedEventType = when (eventType.lowercase().trim()) {
-            "entry", "clock_in" -> "ENTRY"
-            "exit", "clock_out" -> "EXIT"
-            "ping" -> "PING"
+            "entry", "clock_in", "accommodation_entry", "camp_entry" -> "ENTRY"
+            "exit", "clock_out", "accommodation_exit", "camp_exit" -> "EXIT"
+            "ping", "mock_location_detected" -> "PING"
             "location_service_off", "gps_off", "location_disabled" -> "LOCATION_DISABLED"
             "location_service_on", "gps_on", "location_enabled" -> "LOCATION_ENABLED"
-            else -> eventType.uppercase().trim()
+            else -> {
+                val upper = eventType.uppercase().trim()
+                if (upper in listOf("ENTRY", "EXIT", "PING", "LOCATION_DISABLED", "LOCATION_ENABLED")) upper else "PING"
+            }
         }
 
         // STRICT STATE TRANSITION VALIDATION & DEDUPLICATION:
@@ -117,7 +123,7 @@ object EventReporter {
             val db = LocalEventDatabaseHelper.getInstance(context)
             val recordId = db.insertEvent(
                 eventType = normalizedEventType,
-                jobId = normalizedJobId,
+                jobId = effectiveJobId,
                 latitude = latitude,
                 longitude = longitude,
                 timestamp = isoTimestamp,

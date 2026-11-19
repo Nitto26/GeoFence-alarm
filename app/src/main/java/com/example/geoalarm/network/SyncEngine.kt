@@ -10,12 +10,16 @@ import android.os.Looper
 import android.util.Log
 import com.example.geoalarm.storage.LocalEventDatabaseHelper
 import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -119,6 +123,7 @@ object SyncEngine {
             online && unsyncedCount == 0 -> "Online: Synced"
             online && isCurrentlySyncing -> "Online: Syncing..."
             online && unsyncedCount > 0 -> "Online: Syncing ($unsyncedCount)"
+            unsyncedCount == 0 -> "Online: Synced"
             else -> "Offline: Not Sync ($unsyncedCount)"
         }
 
@@ -138,15 +143,19 @@ object SyncEngine {
     }
 
     /**
-     * Flushes local SQLite events to POST /api/v1/mobile/events/batch
+     * Flushes local SQLite events to POST /api/v1/mobile/events/batch according to the contract
      */
-    fun triggerSync(context: Context, onComplete: ((Boolean) -> Unit)? = null) {
+    fun triggerSync(
+        context: Context,
+        isForceSync: Boolean = false,
+        onComplete: ((Boolean, String?) -> Unit)? = null
+    ) {
         val appCtx = context.applicationContext
         if (appContext == null) {
             init(appCtx)
         }
         if (isCurrentlySyncing) {
-            onComplete?.invoke(false)
+            onComplete?.invoke(false, "Sync already in progress")
             return
         }
 
@@ -156,6 +165,7 @@ object SyncEngine {
             withContext(Dispatchers.Main) { notifyStateChange(appCtx) }
 
             val db = LocalEventDatabaseHelper.getInstance(appCtx)
+            var lastErrorMessage: String? = null
 
             try {
                 var totalSyncedThisRound = 0
@@ -165,30 +175,71 @@ object SyncEngine {
                         break
                     }
 
-                    if (!isOnlineNow(appCtx)) {
-                        Log.d(TAG, "Device is offline. Holding ${unsyncedRecords.size} events in local DB.")
+                    val currentlyOnline = isNetworkAvailable || isOnlineNow(appCtx)
+                    if (!isForceSync && !currentlyOnline) {
+                        Log.d(TAG, "Device appears offline. Holding ${unsyncedRecords.size} events in local DB.")
+                        lastErrorMessage = "Device is offline. Events queued locally."
                         break
                     }
 
                     Log.d(TAG, "Flushing batch of ${unsyncedRecords.size} events to /api/v1/mobile/events/batch...")
 
                     val eventItems = unsyncedRecords.map { record ->
+                        val rawType = record.eventType.uppercase().trim()
+                        val isAccommodation = rawType.contains("ACCOMMODATION") || rawType.contains("CAMP") || record.jobId.equals("ACCOMMODATION", ignoreCase = true)
+                        val isMock = rawType.contains("MOCK") || record.eventType.equals("MOCK_LOCATION_DETECTED", ignoreCase = true)
+
+                        val safeEventType = when {
+                            rawType == "LOCATION_DISABLED" || rawType.contains("OFF") -> "LOCATION_DISABLED"
+                            rawType == "LOCATION_ENABLED" || rawType.contains("ON") -> "LOCATION_ENABLED"
+                            rawType in listOf("ENTRY", "CLOCK_IN", "ACCOMMODATION_ENTRY", "CAMP_ENTRY") -> "ENTRY"
+                            rawType in listOf("EXIT", "CLOCK_OUT", "ACCOMMODATION_EXIT", "CAMP_EXIT") -> "EXIT"
+                            else -> "PING"
+                        }
+
+                        val cachedAccId = getCachedAccommodationId(appCtx)
+                        val finalAccommodationId: String? = if (isAccommodation) {
+                            sanitizeUuid(record.jobId) ?: cachedAccId
+                        } else null
+
+                        val finalJobId: String? = if (isAccommodation) {
+                            null
+                        } else {
+                            sanitizeUuid(record.jobId)
+                        }
+
+                        // Resolve coordinates if 0.0
+                        var lat: Double? = if (record.latitude != 0.0 || record.longitude != 0.0) record.latitude else null
+                        var lng: Double? = if (record.latitude != 0.0 || record.longitude != 0.0) record.longitude else null
+
+                        if (lat == null || lng == null) {
+                            val fallback = getFallbackCoordinates(appCtx, record.jobId, isAccommodation)
+                            if (fallback != null) {
+                                lat = fallback.first
+                                lng = fallback.second
+                            }
+                        }
+
+                        // Coordinates boundary check
+                        if (lat != null && (lat < -90.0 || lat > 90.0)) lat = null
+                        if (lng != null && (lng < -180.0 || lng > 180.0)) lng = null
+
                         val sanitizedEventId = sanitizeUuid(record.eventUuid) ?: UUID.randomUUID().toString()
-                        val sanitizedJobId = sanitizeUuid(record.jobId)
+                        val isoTimestamp = ensureIsoUtc(record.timestamp)
 
                         MobileEventItem(
                             eventId = sanitizedEventId,
-                            eventType = record.eventType.uppercase(),
-                            eventTimestampUtc = record.timestamp,
-                            locationCapturedAtUtc = record.timestamp,
-                            latitude = if (record.latitude != 0.0 || record.longitude != 0.0) record.latitude else null,
-                            longitude = if (record.latitude != 0.0 || record.longitude != 0.0) record.longitude else null,
+                            eventType = safeEventType,
+                            eventTimestampUtc = isoTimestamp,
+                            locationCapturedAtUtc = if (lat != null && lng != null) isoTimestamp else null,
+                            latitude = lat,
+                            longitude = lng,
                             accuracyMeters = 5.0f,
-                            isMockLocation = record.eventType.equals("MOCK_LOCATION_DETECTED", ignoreCase = true),
+                            isMockLocation = isMock,
                             sequenceNumber = record.id.toInt(),
-                            jobId = sanitizedJobId,
+                            jobId = finalJobId,
                             jobItemId = null,
-                            accommodationId = null
+                            accommodationId = finalAccommodationId
                         )
                     }
 
@@ -204,11 +255,18 @@ object SyncEngine {
                     val response = ApiClient.apiService.postLocationEvents(request)
 
                     if (response.isSuccessful && response.body() != null) {
+                        isNetworkAvailable = true
                         val body = response.body()!!
                         val recordIds = unsyncedRecords.map { it.id }
                         db.markEventsAsSynced(recordIds)
                         totalSyncedThisRound += recordIds.size
                         Log.d(TAG, "Synced batch of ${recordIds.size} events successfully (server cursor: ${body.latestCursor})")
+
+                        body.results.forEach { res ->
+                            if (res.status.equals("REJECTED", ignoreCase = true)) {
+                                Log.w(TAG, "Server rejected event ${res.eventId}: ${res.reason}")
+                            }
+                        }
 
                         val geoPrefs = appCtx.getSharedPreferences(PREFS_GEO, Context.MODE_PRIVATE)
                         val storedCursor = geoPrefs.getLong(KEY_CURSOR, 0L)
@@ -216,9 +274,23 @@ object SyncEngine {
                             pullDeltaChanges(appCtx)
                         }
                     } else {
+                        val code = response.code()
                         val errBody = try { response.errorBody()?.string() } catch (ex: Exception) { null }
-                        Log.e(TAG, "Server responded with error HTTP ${response.code()} on event batch: $errBody")
-                        break
+                        Log.e(TAG, "Server responded with error HTTP $code on event batch: $errBody")
+
+                        if (code == 422) {
+                            // Hard schema mismatch on these specific records: purge from queue so sync does not stall forever
+                            val badIds = unsyncedRecords.map { it.id }
+                            db.markEventsAsSynced(badIds)
+                            EventReporter.addLocalLog("Schema rejected ${badIds.size} events (HTTP 422). Cleared queue.")
+                            continue
+                        } else if (code == 403) {
+                            lastErrorMessage = "Server access denied (HTTP 403). Tracking paused."
+                            break
+                        } else {
+                            lastErrorMessage = "Server error (HTTP $code). Retrying later."
+                            break
+                        }
                     }
                 }
 
@@ -228,12 +300,17 @@ object SyncEngine {
 
             } catch (e: Exception) {
                 Log.e(TAG, "Sync error: ${e.message}")
+                lastErrorMessage = if (e is java.net.UnknownHostException || e is java.net.ConnectException || e is java.net.SocketTimeoutException) {
+                    "Cannot connect to server. Check your internet connection."
+                } else {
+                    "Sync error: ${e.localizedMessage ?: "Unknown error"}"
+                }
             } finally {
                 isCurrentlySyncing = false
                 withContext(Dispatchers.Main) {
                     notifyStateChange(appCtx)
                     val (_, _, remaining) = db.getStats()
-                    onComplete?.invoke(remaining == 0)
+                    onComplete?.invoke(remaining == 0, lastErrorMessage)
                 }
             }
         }
@@ -255,6 +332,8 @@ object SyncEngine {
             }
 
             val snapshot = response.body()!!
+            isNetworkAvailable = true
+            withContext(Dispatchers.Main) { notifyStateChange(appCtx) }
             applyEntities(appCtx, snapshot.entities)
 
             val geoPrefs = appCtx.getSharedPreferences(PREFS_GEO, Context.MODE_PRIVATE)
@@ -294,6 +373,8 @@ object SyncEngine {
             }
 
             val body = response.body()!!
+            isNetworkAvailable = true
+            withContext(Dispatchers.Main) { notifyStateChange(appCtx) }
             if (body.resyncRequired) {
                 Log.w(TAG, "Server signaled resync_required=true. Pulling fresh snapshot.")
                 return pullSnapshot(appCtx)
@@ -348,6 +429,8 @@ object SyncEngine {
                 )
                 val response = ApiClient.apiService.heartbeat(request)
                 if (response.isSuccessful && response.body() != null) {
+                    isNetworkAvailable = true
+                    withContext(Dispatchers.Main) { notifyStateChange(context) }
                     val body = response.body()!!
                     if (body.hasPendingChanges) {
                         Log.d(TAG, "Heartbeat signaled pending changes. Pulling deltas...")
@@ -378,7 +461,26 @@ object SyncEngine {
                 when (item.entityType.uppercase()) {
                     "PROFILE" -> {
                         val p = gson.fromJson(payload, ProfilePayload::class.java)
-                        userPrefs.edit()
+
+                        val phoneVal = p.phone?.ifBlank { null } ?: try {
+                            if (payload.isJsonObject) {
+                                val obj = payload.asJsonObject
+                                when {
+                                    obj.has("phone") && !obj.get("phone").isJsonNull -> obj.get("phone").asString
+                                    obj.has("phone_number") && !obj.get("phone_number").isJsonNull -> obj.get("phone_number").asString
+                                    obj.has("mobile") && !obj.get("mobile").isJsonNull -> obj.get("mobile").asString
+                                    else -> null
+                                }
+                            } else null
+                        } catch (e: Exception) { null }
+
+                        val emailVal = p.email?.ifBlank { null } ?: try {
+                            if (payload.isJsonObject && payload.asJsonObject.has("email") && !payload.asJsonObject.get("email").isJsonNull) {
+                                payload.asJsonObject.get("email").asString
+                            } else null
+                        } catch (e: Exception) { null }
+
+                        val editor = userPrefs.edit()
                             .putString("WORKER_ID", p.tallyId)
                             .putString("WORKER_TALLY_NO", p.tallyId)
                             .putString("WORKER_NAME", p.name)
@@ -387,7 +489,16 @@ object SyncEngine {
                             .putString("SUPERVISOR_PHONE", p.supervisor?.phone ?: "")
                             .putString("WEEKLY_OFF_DAY", p.weeklyOffDay ?: "Friday")
                             .putBoolean("IS_DRIVER", p.isDriver)
-                            .apply()
+
+                        if (!phoneVal.isNullOrBlank()) {
+                            editor.putString("WORKER_PHONE", phoneVal)
+                            editor.putString("PHONE", phoneVal)
+                        }
+                        if (!emailVal.isNullOrBlank()) {
+                            editor.putString("WORKER_EMAIL", emailVal)
+                            editor.putString("EMAIL", emailVal)
+                        }
+                        editor.apply()
                         EventReporter.addLocalLog("Profile synced: ${p.name} (${p.tallyId})")
                     }
 
@@ -556,10 +667,34 @@ object SyncEngine {
     }
 
     fun isOnlineNow(context: Context): Boolean {
-        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
-        val activeNetwork = cm.activeNetwork ?: return false
-        val capabilities = cm.getNetworkCapabilities(activeNetwork) ?: return false
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return true
+        try {
+            val activeNetwork = cm.activeNetwork
+            if (activeNetwork != null) {
+                val capabilities = cm.getNetworkCapabilities(activeNetwork)
+                if (capabilities != null) {
+                    if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) ||
+                        capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
+                        return true
+                    }
+                }
+            }
+            for (network in cm.allNetworks) {
+                val caps = cm.getNetworkCapabilities(network) ?: continue
+                if (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) ||
+                    caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
+                    return true
+                }
+            }
+            @Suppress("DEPRECATION")
+            val networkInfo = cm.activeNetworkInfo
+            if (networkInfo != null && (networkInfo.isConnected || networkInfo.isConnectedOrConnecting)) {
+                return true
+            }
+        } catch (e: Exception) {
+            return true
+        }
+        return false
     }
 
     fun sanitizeUuid(value: String?): String? {
@@ -569,5 +704,59 @@ object SyncEngine {
         } catch (e: Exception) {
             null
         }
+    }
+
+    fun ensureIsoUtc(ts: String?): String {
+        if (ts.isNullOrBlank()) return EventReporter.getIsoTimestamp(Date())
+        return try {
+            if (ts.endsWith("Z") && ts.length == 20) return ts
+            val millis = ts.toLongOrNull()
+            if (millis != null) {
+                return EventReporter.getIsoTimestamp(Date(millis))
+            }
+            val clean = ts.replace("Z", "").take(19)
+            val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).apply {
+                timeZone = TimeZone.getTimeZone("UTC")
+            }
+            val d = sdf.parse(clean) ?: Date()
+            EventReporter.getIsoTimestamp(d)
+        } catch (e: Exception) {
+            EventReporter.getIsoTimestamp(Date())
+        }
+    }
+
+    fun getFallbackCoordinates(context: Context, jobId: String?, isAccommodation: Boolean): Pair<Double, Double>? {
+        val geoPrefs = context.getSharedPreferences(PREFS_GEO, Context.MODE_PRIVATE)
+        if (isAccommodation) {
+            val json = geoPrefs.getString("CACHED_ACCOMMODATION_JSON", null) ?: return null
+            return try {
+                val item = gson.fromJson(json, AccommodationItem::class.java)
+                if (item.location.isNotEmpty()) {
+                    Pair(item.location[0].latitude, item.location[0].longitude)
+                } else if (item.geofenceCircle?.center != null) {
+                    Pair(item.geofenceCircle.center.lat, item.geofenceCircle.center.lng)
+                } else null
+            } catch (e: Exception) { null }
+        } else if (!jobId.isNullOrBlank()) {
+            val json = geoPrefs.getString("CACHED_JOBS_JSON", null) ?: return null
+            return try {
+                val type = object : TypeToken<List<JobItem>>() {}.type
+                val jobs: List<JobItem> = gson.fromJson(json, type)
+                val matching = jobs.find { it.jobId.equals(jobId, ignoreCase = true) }
+                if (matching != null && matching.location.isNotEmpty()) {
+                    Pair(matching.location[0].latitude, matching.location[0].longitude)
+                } else null
+            } catch (e: Exception) { null }
+        }
+        return null
+    }
+
+    fun getCachedAccommodationId(context: Context): String? {
+        val geoPrefs = context.getSharedPreferences(PREFS_GEO, Context.MODE_PRIVATE)
+        val json = geoPrefs.getString("CACHED_ACCOMMODATION_JSON", null) ?: return null
+        return try {
+            val item = gson.fromJson(json, AccommodationItem::class.java)
+            sanitizeUuid(item.id)
+        } catch (e: Exception) { null }
     }
 }

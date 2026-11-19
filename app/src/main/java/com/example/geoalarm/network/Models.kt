@@ -97,6 +97,10 @@ data class MobileChangePasswordRequest(
     @SerializedName("new_password") val newPassword: String
 )
 
+data class MobileRefreshRequest(
+    @SerializedName("refresh_token") val refreshToken: String
+)
+
 // Legacy alias to maintain compatibility
 typealias ChangePasswordRequest = MobileChangePasswordRequest
 
@@ -159,6 +163,12 @@ data class SyncAckRequest(
     @SerializedName("cursor") val cursor: Long
 )
 
+data class SyncAckResponse(
+    @SerializedName("status") val status: String = "ACKNOWLEDGED",
+    @SerializedName("last_acked_cursor") val lastAckedCursor: Long,
+    @SerializedName("server_time_utc") val serverTimeUtc: String
+)
+
 // Entity Payloads parsed from Snapshot and Changes
 data class SupervisorInfo(
     @SerializedName("name") val name: String,
@@ -169,6 +179,8 @@ data class ProfilePayload(
     @SerializedName("employee_id") val employeeId: String,
     @SerializedName("tally_id") val tallyId: String,
     @SerializedName("name") val name: String,
+    @SerializedName("phone") val phone: String? = null,
+    @SerializedName("email") val email: String? = null,
     @SerializedName("role") val role: String,
     @SerializedName("staff_grade_description") val staffGradeDescription: String? = null,
     @SerializedName("weekly_off_day") val weeklyOffDay: String? = null,
@@ -279,6 +291,68 @@ data class EventBatchResponse(
     @SerializedName("server_time_utc") val serverTimeUtc: String,
     @SerializedName("latest_cursor") val latestCursor: Long = 0,
     @SerializedName("results") val results: List<EventResultItem> = emptyList()
+)
+
+// ==========================================
+// 5. PRIVACY POLICY & CONSENT
+// ==========================================
+
+data class MobilePolicyResponse(
+    @SerializedName("version") val version: Int,
+    @SerializedName("language") val language: String,
+    @SerializedName("title") val title: String,
+    @SerializedName("body") val body: String,
+    @SerializedName("published_at") val publishedAt: String
+)
+
+data class MobileConsentRequest(
+    @SerializedName("policy_version") val policyVersion: Int,
+    @SerializedName("consented_at_utc") val consentedAtUtc: String
+)
+
+data class MobileConsentWithdrawRequest(
+    @SerializedName("reason") val reason: String? = null
+)
+
+// ==========================================
+// 6. DEVICE METADATA
+// ==========================================
+
+data class MobileDeviceUpdateRequest(
+    @SerializedName("push_token") val pushToken: String? = null,
+    @SerializedName("app_version") val appVersion: String? = null,
+    @SerializedName("os_version") val osVersion: String? = null,
+    @SerializedName("location_permission_state") val locationPermissionState: String? = null
+)
+
+// ==========================================
+// 7. PAYROLL & WORKER SLIPS
+// ==========================================
+
+data class WorkerMobilePayrollSlip(
+    @SerializedName("payroll_record_id") val payrollRecordId: String,
+    @SerializedName("payroll_run_id") val payrollRunId: String,
+    @SerializedName("month_label") val monthLabel: String,
+    @SerializedName("period") val period: String? = null,
+    @SerializedName("period_start") val periodStart: String,
+    @SerializedName("period_end") val periodEnd: String,
+    @SerializedName("status") val status: String,
+    @SerializedName("employee_tally_id") val employeeTallyId: String? = null,
+    @SerializedName("employee_name") val employeeName: String? = null,
+    @SerializedName("currency") val currency: String? = "AED",
+    @SerializedName("standard_hours") val standardHours: String,
+    @SerializedName("worked_hours") val workedHours: String,
+    @SerializedName("paid_leave_hours") val paidLeaveHours: String,
+    @SerializedName("unpaid_leave_hours") val unpaidLeaveHours: String,
+    @SerializedName("salary_portion") val salaryPortion: String,
+    @SerializedName("missed_hours_deduction") val missedHoursDeduction: String,
+    @SerializedName("ot1_hours") val ot1Hours: String,
+    @SerializedName("ot1_amount") val ot1Amount: String,
+    @SerializedName("ot2_hours") val ot2Hours: String,
+    @SerializedName("ot2_amount") val ot2Amount: String,
+    @SerializedName("gross_pay") val grossPay: String,
+    @SerializedName("net_pay") val netPay: String,
+    @SerializedName("approved_at") val approvedAt: String? = null
 )
 
 // Legacy compatibility aliases

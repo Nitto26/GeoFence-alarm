@@ -111,12 +111,15 @@
                     android:padding="18dp"
                     android:baselineAligned="false">
 
-                    <!-- Left Half: Today's Payroll (Default) -->
+                    <!-- Left Half: Monthly Payroll -->
                     <LinearLayout
+                        android:id="@+id/layoutPayrollSection"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1.2"
-                        android:orientation="vertical">
+                        android:orientation="vertical"
+                        android:clickable="true"
+                        android:focusable="true">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -148,7 +151,7 @@
                                     android:id="@+id/tvPayrollPeriodLabel"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:text="Today's Payroll"
+                                    android:text="Monthly Payroll"
                                     android:textColor="#D0E1FD"
                                     android:textSize="11sp" />
 
@@ -157,7 +160,7 @@
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:layout_marginTop="2dp"
-                                    android:text="₹1,250"
+                                    android:text="—"
                                     android:textColor="#FFFFFF"
                                     android:textSize="21sp"
                                     android:textStyle="bold" />
@@ -182,7 +185,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginStart="5dp"
-                                android:text="Daily Shift (8h Standard)"
+                                android:text="Pending server approval"
                                 android:textColor="#BAF7D0"
                                 android:textSize="11sp"
                                 android:textStyle="bold" />
@@ -230,7 +233,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="4dp"
-                            android:text="00h 00m 00s"
+                            android:text="—"
                             android:textColor="#FFFFFF"
                             android:textSize="19sp"
                             android:textStyle="bold" />
@@ -336,7 +339,7 @@
                     <androidx.viewpager2.widget.ViewPager2
                         android:id="@+id/viewPagerWorksites"
                         android:layout_width="match_parent"
-                        android:layout_height="230dp"
+                        android:layout_height="275dp"
                         android:clipChildren="false"
                         android:clipToPadding="false"
                         android:paddingStart="4dp"
@@ -346,9 +349,9 @@
                     <androidx.cardview.widget.CardView
                         android:id="@+id/cardWorksiteEmptyState"
                         android:layout_width="match_parent"
-                        android:layout_height="220dp"
+                        android:layout_height="265dp"
                         android:layout_margin="4dp"
-                        app:cardCornerRadius="20dp"
+                        app:cardCornerRadius="22dp"
                         app:cardElevation="1dp"
                         app:cardBackgroundColor="#F8FAFC"
                         app:strokeColor="#E2E8F0"
@@ -360,31 +363,36 @@
                             android:layout_height="match_parent"
                             android:gravity="center"
                             android:orientation="vertical"
-                            android:padding="20dp">
+                            android:padding="28dp">
 
                             <ImageView
-                                android:layout_width="48dp"
-                                android:layout_height="48dp"
+                                android:layout_width="54dp"
+                                android:layout_height="54dp"
                                 android:src="@drawable/ic_calendar"
                                 app:tint="#94A3B8" />
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:layout_marginTop="12dp"
+                                android:layout_marginTop="16dp"
                                 android:text="No Worksites Assigned"
                                 android:textColor="#0F172A"
-                                android:textSize="15sp"
-                                android:textStyle="bold" />
+                                android:textSize="18sp"
+                                android:textStyle="bold"
+                                android:letterSpacing="0.01" />
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:layout_marginTop="4dp"
+                                android:layout_marginTop="8dp"
+                                android:layout_marginHorizontal="12dp"
                                 android:text="You have no workspace assigned for today. You are currently on standby."
                                 android:textColor="#64748B"
-                                android:textSize="12sp"
-                                android:gravity="center" />
+                                android:textSize="13.5sp"
+                                android:gravity="center"
+                                android:lineSpacingExtra="5dp"
+                                android:lineSpacingMultiplier="1.2"
+                                android:letterSpacing="0.01" />
                         </LinearLayout>
                     </androidx.cardview.widget.CardView>
                 </FrameLayout>
@@ -445,18 +453,21 @@
                                 android:layout_height="wrap_content"
                                 android:text="Work Time Ended"
                                 android:textColor="#64748B"
-                                android:textSize="15sp"
+                                android:textSize="15.5sp"
                                 android:textStyle="bold"
+                                android:letterSpacing="0.01"
                                 tools:text="Work Time Ended" />
 
                             <TextView
                                 android:id="@+id/tvAttendanceSubtitle"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:layout_marginTop="1dp"
+                                android:layout_marginTop="2dp"
                                 android:text="App is sleeping • No background tracking"
                                 android:textColor="#64748B"
-                                android:textSize="12sp" />
+                                android:textSize="12sp"
+                                android:lineSpacingExtra="2dp"
+                                android:letterSpacing="0.01" />
                         </LinearLayout>
 
                         <!-- Live Digital Clock Display -->

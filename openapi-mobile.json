@@ -1,0 +1,2461 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Field Worker Tracker API (Mobile)",
+    "description": "Backend API for Field Worker Tracker (FWT)",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/mobile/auth/login": {
+      "post": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Mobile Login",
+        "operationId": "mobile_login_api_v1_mobile_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobileLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileLoginResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/auth/change-password": {
+      "post": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Mobile Change Password",
+        "operationId": "mobile_change_password_api_v1_mobile_auth_change_password_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobileChangePasswordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Mobile Change Password Api V1 Mobile Auth Change Password Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/auth/refresh": {
+      "post": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Mobile Refresh",
+        "operationId": "mobile_refresh_api_v1_mobile_auth_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobileRefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Mobile Refresh Api V1 Mobile Auth Refresh Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/auth/logout": {
+      "post": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Mobile Logout",
+        "operationId": "mobile_logout_api_v1_mobile_auth_logout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobileRefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/consent": {
+      "post": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Mobile Record Consent",
+        "operationId": "mobile_record_consent_api_v1_mobile_consent_post",
+        "parameters": [
+          {
+            "name": "allow_password_change_pending",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Allow Password Change Pending"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobileConsentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Mobile Record Consent Api V1 Mobile Consent Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/consent/withdraw": {
+      "post": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Mobile Withdraw Consent",
+        "description": "Worker withdraws tracking consent; stops tracking and notifies Admin.",
+        "operationId": "mobile_withdraw_consent_api_v1_mobile_consent_withdraw_post",
+        "parameters": [
+          {
+            "name": "allow_password_change_pending",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Allow Password Change Pending"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/MobileConsentWithdrawRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Request"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Mobile Withdraw Consent Api V1 Mobile Consent Withdraw Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/policy/location": {
+      "get": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Get Mobile Location Policy",
+        "operationId": "get_mobile_location_policy_api_v1_mobile_policy_location_get",
+        "parameters": [
+          {
+            "name": "language",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "en",
+              "title": "Language"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilePolicyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/device": {
+      "put": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Update Mobile Device",
+        "operationId": "update_mobile_device_api_v1_mobile_device_put",
+        "parameters": [
+          {
+            "name": "allow_password_change_pending",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Allow Password Change Pending"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobileDeviceUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Update Mobile Device Api V1 Mobile Device Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/heartbeat": {
+      "post": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Mobile Heartbeat",
+        "operationId": "mobile_heartbeat_api_v1_mobile_heartbeat_post",
+        "parameters": [
+          {
+            "name": "allow_password_change_pending",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Allow Password Change Pending"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobileHeartbeatRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileHeartbeatResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/sync/snapshot": {
+      "get": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Get Sync Snapshot",
+        "operationId": "get_sync_snapshot_api_v1_mobile_sync_snapshot_get",
+        "parameters": [
+          {
+            "name": "allow_password_change_pending",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Allow Password Change Pending"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncSnapshotResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/sync/changes": {
+      "get": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Get Sync Changes",
+        "operationId": "get_sync_changes_api_v1_mobile_sync_changes_get",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 200,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "allow_password_change_pending",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Allow Password Change Pending"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncChangesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/sync/ack": {
+      "post": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Post Sync Ack",
+        "operationId": "post_sync_ack_api_v1_mobile_sync_ack_post",
+        "parameters": [
+          {
+            "name": "allow_password_change_pending",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Allow Password Change Pending"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncAckRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncAckResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/events/batch": {
+      "post": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Ingest Event Batch",
+        "description": "Ingest a batch of up to 200 raw location events from a mobile device.",
+        "operationId": "ingest_event_batch_api_v1_mobile_events_batch_post",
+        "parameters": [
+          {
+            "name": "allow_password_change_pending",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Allow Password Change Pending"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventBatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventBatchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/me/payroll": {
+      "get": {
+        "tags": [
+          "payroll",
+          "mobile",
+          "payroll"
+        ],
+        "summary": "Get Mobile Payroll",
+        "description": "Worker's own approved monthly payroll records (employer provisions stripped).\n\nIf period=YYYY-MM is provided, returns that specific month's approved slip (or 404).\nIf period is omitted, returns the list of all approved slips.",
+        "operationId": "get_mobile_payroll_api_v1_mobile_me_payroll_get",
+        "parameters": [
+          {
+            "name": "period",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Period"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/WorkerMobilePayrollSlip"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WorkerMobilePayrollSlip"
+                      }
+                    }
+                  ],
+                  "title": "Response Get Mobile Payroll Api V1 Mobile Me Payroll Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AccommodationPayload": {
+        "properties": {
+          "accommodation_id": {
+            "format": "uuid",
+            "title": "Accommodation Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Address"
+          },
+          "boundary": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Boundary"
+          },
+          "geofence_circle": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GeofenceCircle"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "accommodation_id",
+          "name"
+        ],
+        "title": "AccommodationPayload",
+        "type": "object"
+      },
+      "DayPlanPayload": {
+        "properties": {
+          "work_date": {
+            "title": "Work Date",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "marker": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Marker"
+          },
+          "planned": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DayPlanPlannedTimes"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "standard_hours": {
+            "default": 8,
+            "title": "Standard Hours",
+            "type": "integer"
+          },
+          "alarm_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Alarm Time"
+          }
+        },
+        "required": [
+          "work_date",
+          "status"
+        ],
+        "title": "DayPlanPayload",
+        "type": "object"
+      },
+      "DayPlanPlannedTimes": {
+        "properties": {
+          "accommodation_start": {
+            "title": "Accommodation Start",
+            "type": "string"
+          },
+          "first_site_start": {
+            "title": "First Site Start",
+            "type": "string"
+          },
+          "break_minutes": {
+            "title": "Break Minutes",
+            "type": "integer"
+          },
+          "last_site_end": {
+            "title": "Last Site End",
+            "type": "string"
+          },
+          "accommodation_end": {
+            "title": "Accommodation End",
+            "type": "string"
+          }
+        },
+        "required": [
+          "accommodation_start",
+          "first_site_start",
+          "break_minutes",
+          "last_site_end",
+          "accommodation_end"
+        ],
+        "title": "DayPlanPlannedTimes",
+        "type": "object"
+      },
+      "EventBatchRequest": {
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Batch Id"
+          },
+          "device_clock_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Device Clock Utc"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/MobileEventItem"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Events"
+          }
+        },
+        "type": "object",
+        "required": [
+          "batch_id",
+          "device_clock_utc",
+          "events"
+        ],
+        "title": "EventBatchRequest"
+      },
+      "EventBatchResponse": {
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Batch Id"
+          },
+          "server_time_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Server Time Utc"
+          },
+          "latest_cursor": {
+            "type": "integer",
+            "title": "Latest Cursor"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/EventResultItem"
+            },
+            "type": "array",
+            "title": "Results"
+          }
+        },
+        "type": "object",
+        "required": [
+          "batch_id",
+          "server_time_utc",
+          "latest_cursor",
+          "results"
+        ],
+        "title": "EventBatchResponse"
+      },
+      "EventResultItem": {
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Event Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/EventStatus"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RejectReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "event_id",
+          "status"
+        ],
+        "title": "EventResultItem"
+      },
+      "EventStatus": {
+        "type": "string",
+        "enum": [
+          "ACCEPTED",
+          "DUPLICATE",
+          "REJECTED"
+        ],
+        "title": "EventStatus"
+      },
+      "EventType": {
+        "type": "string",
+        "enum": [
+          "ENTRY",
+          "EXIT",
+          "PING",
+          "LOCATION_DISABLED",
+          "LOCATION_ENABLED"
+        ],
+        "title": "EventType"
+      },
+      "GeofenceCircle": {
+        "properties": {
+          "center": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Center",
+            "type": "object"
+          },
+          "radius_m": {
+            "title": "Radius M",
+            "type": "number"
+          }
+        },
+        "required": [
+          "center",
+          "radius_m"
+        ],
+        "title": "GeofenceCircle",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "JobItemSummary": {
+        "properties": {
+          "staff_grade_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Staff Grade Description"
+          },
+          "deployment_type": {
+            "default": "PERMANENT",
+            "title": "Deployment Type",
+            "type": "string"
+          },
+          "required_staff_count": {
+            "default": 1,
+            "title": "Required Staff Count",
+            "type": "integer"
+          },
+          "hours_per_occurrence_per_staff": {
+            "default": 9.0,
+            "title": "Hours Per Occurrence Per Staff",
+            "type": "number"
+          }
+        },
+        "title": "JobItemSummary",
+        "type": "object"
+      },
+      "JobPayload": {
+        "properties": {
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "job_number": {
+            "title": "Job Number",
+            "type": "string"
+          },
+          "job_name": {
+            "title": "Job Name",
+            "type": "string"
+          },
+          "boundary": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Boundary"
+          },
+          "geofence_circle": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GeofenceCircle"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "boundary_missing": {
+            "default": false,
+            "title": "Boundary Missing",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "job_id",
+          "job_number",
+          "job_name"
+        ],
+        "title": "JobPayload",
+        "type": "object"
+      },
+      "LocationPermissionState": {
+        "type": "string",
+        "enum": [
+          "ALWAYS",
+          "WHILE_IN_USE",
+          "DENIED",
+          "RESTRICTED"
+        ],
+        "title": "LocationPermissionState"
+      },
+      "MobileChangePasswordRequest": {
+        "properties": {
+          "old_password": {
+            "type": "string",
+            "title": "Old Password"
+          },
+          "new_password": {
+            "type": "string",
+            "title": "New Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "old_password",
+          "new_password"
+        ],
+        "title": "MobileChangePasswordRequest"
+      },
+      "MobileConsentRequest": {
+        "properties": {
+          "policy_version": {
+            "type": "integer",
+            "title": "Policy Version"
+          },
+          "consented_at_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Consented At Utc"
+          }
+        },
+        "type": "object",
+        "required": [
+          "policy_version",
+          "consented_at_utc"
+        ],
+        "title": "MobileConsentRequest"
+      },
+      "MobileConsentWithdrawRequest": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "title": "MobileConsentWithdrawRequest"
+      },
+      "MobileDeviceRegistration": {
+        "properties": {
+          "device_identifier": {
+            "type": "string",
+            "title": "Device Identifier"
+          },
+          "platform": {
+            "$ref": "#/components/schemas/PlatformEnum"
+          },
+          "device_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Model"
+          },
+          "app_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Version"
+          },
+          "os_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Os Version"
+          },
+          "push_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Push Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "device_identifier",
+          "platform"
+        ],
+        "title": "MobileDeviceRegistration"
+      },
+      "MobileDeviceUpdateRequest": {
+        "properties": {
+          "push_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Push Token"
+          },
+          "app_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Version"
+          },
+          "os_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Os Version"
+          },
+          "location_permission_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocationPermissionState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "MobileDeviceUpdateRequest"
+      },
+      "MobileEmployeeInfo": {
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Employee Id"
+          },
+          "tally_id": {
+            "type": "string",
+            "title": "Tally Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          }
+        },
+        "type": "object",
+        "required": [
+          "employee_id",
+          "tally_id",
+          "name",
+          "role"
+        ],
+        "title": "MobileEmployeeInfo"
+      },
+      "MobileEventItem": {
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Event Id"
+          },
+          "event_type": {
+            "$ref": "#/components/schemas/EventType"
+          },
+          "event_timestamp_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Event Timestamp Utc"
+          },
+          "location_captured_at_utc": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Captured At Utc"
+          },
+          "latitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latitude"
+          },
+          "longitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Longitude"
+          },
+          "accuracy_meters": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accuracy Meters"
+          },
+          "is_mock_location": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Mock Location"
+          },
+          "sequence_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sequence Number"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "job_item_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Item Id"
+          },
+          "accommodation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accommodation Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "event_id",
+          "event_type",
+          "event_timestamp_utc"
+        ],
+        "title": "MobileEventItem"
+      },
+      "MobileHeartbeatRequest": {
+        "properties": {
+          "app_version": {
+            "type": "string",
+            "title": "App Version"
+          },
+          "cursor": {
+            "type": "integer",
+            "title": "Cursor"
+          },
+          "location_permission_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocationPermissionState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "app_version",
+          "cursor"
+        ],
+        "title": "MobileHeartbeatRequest"
+      },
+      "MobileHeartbeatResponse": {
+        "properties": {
+          "server_time_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Server Time Utc"
+          },
+          "latest_cursor": {
+            "type": "integer",
+            "title": "Latest Cursor"
+          },
+          "min_app_version": {
+            "type": "string",
+            "title": "Min App Version",
+            "default": "1.0.0"
+          },
+          "has_pending_changes": {
+            "type": "boolean",
+            "title": "Has Pending Changes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "server_time_utc",
+          "latest_cursor",
+          "has_pending_changes"
+        ],
+        "title": "MobileHeartbeatResponse"
+      },
+      "MobileLoginRequest": {
+        "properties": {
+          "tally_id": {
+            "type": "string",
+            "title": "Tally Id"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password"
+          },
+          "device": {
+            "$ref": "#/components/schemas/MobileDeviceRegistration"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tally_id",
+          "password",
+          "device"
+        ],
+        "title": "MobileLoginRequest"
+      },
+      "MobileLoginResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "refresh_token": {
+            "type": "string",
+            "title": "Refresh Token"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In",
+            "default": 900
+          },
+          "server_time_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Server Time Utc"
+          },
+          "must_change_password": {
+            "type": "boolean",
+            "title": "Must Change Password"
+          },
+          "employee": {
+            "$ref": "#/components/schemas/MobileEmployeeInfo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "refresh_token",
+          "server_time_utc",
+          "must_change_password",
+          "employee"
+        ],
+        "title": "MobileLoginResponse"
+      },
+      "MobilePolicyResponse": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Published At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "language",
+          "title",
+          "body",
+          "published_at"
+        ],
+        "title": "MobilePolicyResponse"
+      },
+      "MobileRefreshRequest": {
+        "properties": {
+          "refresh_token": {
+            "type": "string",
+            "title": "Refresh Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "refresh_token"
+        ],
+        "title": "MobileRefreshRequest"
+      },
+      "PlatformEnum": {
+        "type": "string",
+        "enum": [
+          "ANDROID",
+          "IOS"
+        ],
+        "title": "PlatformEnum"
+      },
+      "ProfilePayload": {
+        "properties": {
+          "employee_id": {
+            "format": "uuid",
+            "title": "Employee Id",
+            "type": "string"
+          },
+          "tally_id": {
+            "title": "Tally Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Phone"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Email"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "staff_grade_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Staff Grade Description"
+          },
+          "weekly_off_day": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Weekly Off Day"
+          },
+          "is_driver": {
+            "default": false,
+            "title": "Is Driver",
+            "type": "boolean"
+          },
+          "supervisor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProfileSupervisor"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "accommodation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Accommodation Id"
+          }
+        },
+        "required": [
+          "employee_id",
+          "tally_id",
+          "name",
+          "role"
+        ],
+        "title": "ProfilePayload",
+        "type": "object"
+      },
+      "ProfileSupervisor": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Name"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Phone"
+          }
+        },
+        "title": "ProfileSupervisor",
+        "type": "object"
+      },
+      "RejectReason": {
+        "type": "string",
+        "enum": [
+          "INVALID_SCHEMA",
+          "INVALID_COORDINATES",
+          "TIMESTAMP_IN_FUTURE",
+          "TIMESTAMP_TOO_OLD"
+        ],
+        "title": "RejectReason"
+      },
+      "ScheduleItemPayload": {
+        "properties": {
+          "scheduled_work_id": {
+            "format": "uuid",
+            "title": "Scheduled Work Id",
+            "type": "string"
+          },
+          "work_date": {
+            "title": "Work Date",
+            "type": "string"
+          },
+          "sequence": {
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "assigned_hours": {
+            "title": "Assigned Hours",
+            "type": "number"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "job_item_id": {
+            "format": "uuid",
+            "title": "Job Item Id",
+            "type": "string"
+          },
+          "sub_item_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sub Item Code"
+          },
+          "occurrence_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Occurrence Id"
+          },
+          "job_item_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobItemSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "source": {
+            "default": "PLANNED",
+            "title": "Source",
+            "type": "string"
+          },
+          "is_reassignment": {
+            "default": false,
+            "title": "Is Reassignment",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "scheduled_work_id",
+          "work_date",
+          "sequence",
+          "assigned_hours",
+          "status",
+          "job_id",
+          "job_item_id"
+        ],
+        "title": "ScheduleItemPayload",
+        "type": "object"
+      },
+      "SettingsPayload": {
+        "properties": {
+          "geofence_circle_radius_m": {
+            "default": 300,
+            "title": "Geofence Circle Radius M",
+            "type": "integer"
+          },
+          "approach_polling_interval_s": {
+            "default": 60,
+            "title": "Approach Polling Interval S",
+            "type": "integer"
+          },
+          "confirmation_polling_interval_s": {
+            "default": 300,
+            "title": "Confirmation Polling Interval S",
+            "type": "integer"
+          },
+          "schedule_sync_window_days": {
+            "default": 30,
+            "title": "Schedule Sync Window Days",
+            "type": "integer"
+          },
+          "location_policy_version": {
+            "default": 1,
+            "title": "Location Policy Version",
+            "type": "integer"
+          },
+          "alarm_lead_minutes": {
+            "default": 30,
+            "title": "Alarm Lead Minutes",
+            "type": "integer"
+          },
+          "timezone": {
+            "default": "Asia/Dubai",
+            "title": "Timezone",
+            "type": "string"
+          },
+          "upcoming": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Upcoming",
+            "type": "array"
+          }
+        },
+        "title": "SettingsPayload",
+        "type": "object"
+      },
+      "SnapshotEntity": {
+        "properties": {
+          "entity_type": {
+            "type": "string",
+            "title": "Entity Type"
+          },
+          "entity_id": {
+            "type": "string",
+            "title": "Entity Id"
+          },
+          "entity_version": {
+            "type": "integer",
+            "title": "Entity Version"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          }
+        },
+        "type": "object",
+        "required": [
+          "entity_type",
+          "entity_id",
+          "entity_version"
+        ],
+        "title": "SnapshotEntity"
+      },
+      "SyncAckRequest": {
+        "properties": {
+          "cursor": {
+            "type": "integer",
+            "title": "Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cursor"
+        ],
+        "title": "SyncAckRequest"
+      },
+      "SyncAckResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "ACKNOWLEDGED"
+          },
+          "last_acked_cursor": {
+            "type": "integer",
+            "title": "Last Acked Cursor"
+          },
+          "server_time_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Server Time Utc"
+          }
+        },
+        "type": "object",
+        "required": [
+          "last_acked_cursor",
+          "server_time_utc"
+        ],
+        "title": "SyncAckResponse"
+      },
+      "SyncChangeItem": {
+        "properties": {
+          "cursor": {
+            "type": "integer",
+            "title": "Cursor"
+          },
+          "entity_type": {
+            "type": "string",
+            "title": "Entity Type"
+          },
+          "entity_id": {
+            "type": "string",
+            "title": "Entity Id"
+          },
+          "entity_version": {
+            "type": "integer",
+            "title": "Entity Version"
+          },
+          "op": {
+            "type": "string",
+            "title": "Op"
+          },
+          "priority": {
+            "type": "integer",
+            "title": "Priority"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cursor",
+          "entity_type",
+          "entity_id",
+          "entity_version",
+          "op",
+          "priority"
+        ],
+        "title": "SyncChangeItem"
+      },
+      "SyncChangesResponse": {
+        "properties": {
+          "from_cursor": {
+            "type": "integer",
+            "title": "From Cursor"
+          },
+          "next_cursor": {
+            "type": "integer",
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More"
+          },
+          "resync_required": {
+            "type": "boolean",
+            "title": "Resync Required"
+          },
+          "server_time_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Server Time Utc"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/SyncChangeItem"
+            },
+            "type": "array",
+            "title": "Changes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "from_cursor",
+          "next_cursor",
+          "has_more",
+          "resync_required",
+          "server_time_utc",
+          "changes"
+        ],
+        "title": "SyncChangesResponse"
+      },
+      "SyncSnapshotResponse": {
+        "properties": {
+          "cursor": {
+            "type": "integer",
+            "title": "Cursor"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "server_time_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Server Time Utc"
+          },
+          "window": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Window"
+          },
+          "entities": {
+            "items": {
+              "$ref": "#/components/schemas/SnapshotEntity"
+            },
+            "type": "array",
+            "title": "Entities"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cursor",
+          "generated_at",
+          "server_time_utc",
+          "window",
+          "entities"
+        ],
+        "title": "SyncSnapshotResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "WorkerMobilePayrollSlip": {
+        "properties": {
+          "payroll_record_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Payroll Record Id"
+          },
+          "payroll_run_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Payroll Run Id"
+          },
+          "month_label": {
+            "type": "string",
+            "title": "Month Label"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period"
+          },
+          "period_start": {
+            "type": "string",
+            "format": "date",
+            "title": "Period Start"
+          },
+          "period_end": {
+            "type": "string",
+            "format": "date",
+            "title": "Period End"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "employee_tally_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employee Tally Id"
+          },
+          "employee_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employee Name"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency",
+            "default": "AED"
+          },
+          "standard_hours": {
+            "type": "string",
+            "title": "Standard Hours"
+          },
+          "worked_hours": {
+            "type": "string",
+            "title": "Worked Hours"
+          },
+          "paid_leave_hours": {
+            "type": "string",
+            "title": "Paid Leave Hours"
+          },
+          "unpaid_leave_hours": {
+            "type": "string",
+            "title": "Unpaid Leave Hours"
+          },
+          "salary_portion": {
+            "type": "string",
+            "title": "Salary Portion"
+          },
+          "missed_hours_deduction": {
+            "type": "string",
+            "title": "Missed Hours Deduction"
+          },
+          "ot1_hours": {
+            "type": "string",
+            "title": "Ot1 Hours"
+          },
+          "ot1_amount": {
+            "type": "string",
+            "title": "Ot1 Amount"
+          },
+          "ot2_hours": {
+            "type": "string",
+            "title": "Ot2 Hours"
+          },
+          "ot2_amount": {
+            "type": "string",
+            "title": "Ot2 Amount"
+          },
+          "gross_pay": {
+            "type": "string",
+            "title": "Gross Pay"
+          },
+          "net_pay": {
+            "type": "string",
+            "title": "Net Pay"
+          },
+          "approved_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "payroll_record_id",
+          "payroll_run_id",
+          "month_label",
+          "period_start",
+          "period_end",
+          "status",
+          "standard_hours",
+          "worked_hours",
+          "paid_leave_hours",
+          "unpaid_leave_hours",
+          "salary_portion",
+          "missed_hours_deduction",
+          "ot1_hours",
+          "ot1_amount",
+          "ot2_hours",
+          "ot2_amount",
+          "gross_pay",
+          "net_pay"
+        ],
+        "title": "WorkerMobilePayrollSlip"
+      }
+    }
+  }
+}

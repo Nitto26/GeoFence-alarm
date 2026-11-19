@@ -28,8 +28,10 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.GridLayout
+import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.RelativeLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -52,8 +54,10 @@ import com.example.geoalarm.network.ApiClient
 import com.example.geoalarm.network.ChangePasswordRequest
 import com.example.geoalarm.network.EventReporter
 import com.example.geoalarm.network.JobItem
+import com.example.geoalarm.network.MobileRefreshRequest
 import com.example.geoalarm.network.SyncEngine
 import com.example.geoalarm.network.SyncState
+import com.example.geoalarm.network.WorkerMobilePayrollSlip
 import com.example.geoalarm.storage.LocalEventDatabaseHelper
 import com.example.geoalarm.storage.LocalEventRecord
 import com.google.android.gms.common.api.ResolvableApiException
@@ -117,6 +121,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private var liveDayPlans: List<com.example.geoalarm.network.DayPlanPayload> = emptyList()
     private var liveScheduleItems: List<com.example.geoalarm.network.ScheduleItemPayload> = emptyList()
     private var liveAccommodation: com.example.geoalarm.network.AccommodationItem? = null
+    private var cachedPayrollSlips: List<WorkerMobilePayrollSlip> = emptyList()
 
     // Logged in Worker Profile
     private var loggedInWorkerId: String = ""
@@ -177,14 +182,30 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
     }
 
-    fun getDailyAccumulatedWorkedMillis(sharedPrefs: SharedPreferences): Long {
+    fun getTodayTotalWorkedMillis(sharedPrefs: SharedPreferences): Long {
         val todayYmd = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
         val savedDate = sharedPrefs.getString("DAILY_WORKED_DATE", "")
-        return if (savedDate == todayYmd) {
-            sharedPrefs.getLong("DAILY_WORKED_MILLIS", 0L)
-        } else {
-            0L
+        val isClockedIn = sharedPrefs.getBoolean("IS_CLOCKED_IN", false)
+        val clockInTime = sharedPrefs.getLong("CLOCK_IN_TIMESTAMP", 0L)
+
+        // Reset only when the day finishes (midnight rollover / new date)
+        if (savedDate != todayYmd) {
+            val editor = sharedPrefs.edit()
+            editor.putString("DAILY_WORKED_DATE", todayYmd)
+            editor.putLong("DAILY_WORKED_MILLIS", 0L)
+            if (isClockedIn) {
+                editor.putLong("CLOCK_IN_TIMESTAMP", System.currentTimeMillis())
+            }
+            editor.apply()
+            return if (isClockedIn) Math.max(0L, System.currentTimeMillis() - clockInTime) else 0L
         }
+
+        val accumulated = sharedPrefs.getLong("DAILY_WORKED_MILLIS", 0L)
+        val currentSession = if (isClockedIn && clockInTime > 0L) {
+            Math.max(0L, System.currentTimeMillis() - clockInTime)
+        } else 0L
+
+        return accumulated + currentSession
     }
 
     private fun pauseAndAccumulateDailyWorkTime(sharedPrefs: SharedPreferences) {
@@ -216,51 +237,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         editor.apply()
     }
 
-    // Live Clock & Shift Ticker (Cumulative Daily Work Timer)
+    // Live Clock & Status Ticker
     private val clockTicker = object : Runnable {
         override fun run() {
             // 1. Update Home Current Time Clock (always live)
             val tvTime = findViewById<TextView>(R.id.tvLiveCurrentTime)
             tvTime?.text = SimpleDateFormat("hh:mm:ss a", Locale.getDefault()).format(Date())
 
-            // 2. Update Hours Worked Shift Timer (Cumulative Daily Timer)
+            // 2. Continuously verify and sync Clock In/Out button state
             val sharedPrefs = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
             val isClockedIn = sharedPrefs.getBoolean("IS_CLOCKED_IN", false)
-
-            val tvTimer = findViewById<TextView>(R.id.tvHoursWorkedTimer)
-            if (tvTimer != null) {
-                val accumulated = getDailyAccumulatedWorkedMillis(sharedPrefs)
-                if (isClockedIn) {
-                    val clockInTimestamp = sharedPrefs.getLong("CLOCK_IN_TIMESTAMP", 0L)
-                    val baseTime = if (clockInTimestamp > 0L) clockInTimestamp else (if (startTimeMillis > 0L) startTimeMillis else System.currentTimeMillis())
-                    val sessionElapsed = Math.max(0L, System.currentTimeMillis() - baseTime)
-                    val totalWorked = accumulated + sessionElapsed
-                    val hours = totalWorked / 3600000
-                    val minutes = (totalWorked % 3600000) / 60000
-                    val seconds = (totalWorked % 60000) / 1000
-                    when (activeHoursFilter) {
-                        "Today" -> tvTimer.text = String.format(Locale.US, "%02dh %02dm %02ds", hours, minutes, seconds)
-                        "Last Month" -> tvTimer.text = "188h 00m"
-                        else -> {
-                            val monthlyHours = 160L + hours
-                            tvTimer.text = String.format(Locale.US, "%02dh %02dm %02ds", monthlyHours, minutes, seconds)
-                        }
-                    }
-                } else {
-                    val hours = accumulated / 3600000
-                    val minutes = (accumulated % 3600000) / 60000
-                    when (activeHoursFilter) {
-                        "Today" -> tvTimer.text = String.format(Locale.US, "%02dh %02dm (Paused)", hours, minutes)
-                        "Last Month" -> tvTimer.text = "188h 00m"
-                        else -> {
-                            val monthlyHours = 160L + hours
-                            tvTimer.text = String.format(Locale.US, "%02dh %02dm", monthlyHours, minutes)
-                        }
-                    }
-                }
-            }
-
-            // Continuously verify and sync Clock In/Out button state
             val btnClockToggle = findViewById<com.google.android.material.button.MaterialButton>(R.id.btnClockToggle)
             if (btnClockToggle != null) {
                 val currentText = btnClockToggle.text?.toString() ?: ""
@@ -271,7 +257,20 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 }
             }
 
-            // 3. Mandatory Location Enforcement while App is Open
+            // 3. Real-time live update for "Today" worked hours
+            if (activeHoursFilter == "Today") {
+                val tvHoursWorkedTimer = findViewById<TextView>(R.id.tvHoursWorkedTimer)
+                if (tvHoursWorkedTimer != null) {
+                    val totalMillis = getTodayTotalWorkedMillis(sharedPrefs)
+                    val totalSeconds = totalMillis / 1000
+                    val hrs = totalSeconds / 3600
+                    val mins = (totalSeconds % 3600) / 60
+                    val secs = totalSeconds % 60
+                    tvHoursWorkedTimer.text = String.format(Locale.US, "%02d:%02d:%02d", hrs, mins, secs)
+                }
+            }
+
+            // 4. Mandatory Location Enforcement while App is Open
             if (!isLocationServicesEnabled()) {
                 if (!isLocationPromptShowing && (fallbackDialog == null || fallbackDialog?.isShowing == false)) {
                     isLocationPromptShowing = true
@@ -432,7 +431,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         setupHomeInteractions()
         setupProfileInteractions()
         setupWorkCalendar()
-        setupMapDetailsCard()
         setupBiometricSecurity()
 
         // Sync Clock In / Out UI State from SharedPreferences
@@ -560,6 +558,18 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         } else {
             liveAccommodation = null
         }
+
+        val payrollJson = geoPrefs.getString("CACHED_PAYROLL_SLIPS_JSON", null)
+        if (!payrollJson.isNullOrEmpty()) {
+            try {
+                val slipType = object : com.google.gson.reflect.TypeToken<List<WorkerMobilePayrollSlip>>() {}.type
+                cachedPayrollSlips = com.google.gson.Gson().fromJson(payrollJson, slipType) ?: emptyList()
+            } catch (_: Exception) {
+                cachedPayrollSlips = emptyList()
+            }
+        }
+        updatePayrollDisplay()
+        updateHoursWorkedDisplay()
     }
 
     // ==========================================
@@ -570,8 +580,11 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             Toast.makeText(this, "Syncing latest data from server...", Toast.LENGTH_SHORT).show()
         }
 
+        fetchPayrollData()
+
         lifecycleScope.launch(Dispatchers.IO) {
             val success = SyncEngine.pullSnapshot(this@MainActivity)
+            SyncEngine.triggerSync(this@MainActivity)
             withContext(Dispatchers.Main) {
                 if (success) {
                     loadCachedDataOnLaunch()
@@ -626,6 +639,24 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val tvProfileAvatarInitial = findViewById<TextView>(R.id.tvProfileAvatarInitial)
 
         val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+        val prefPhone = userPrefs.getString("WORKER_PHONE", null)?.ifBlank { null }
+            ?: userPrefs.getString("PHONE", null)?.ifBlank { null }
+        if (!prefPhone.isNullOrBlank()) {
+            loggedInWorkerPhone = prefPhone
+        }
+        val prefName = userPrefs.getString("WORKER_NAME", null)?.ifBlank { null }
+        if (!prefName.isNullOrBlank()) {
+            loggedInWorkerName = prefName
+        }
+        val prefDesignation = userPrefs.getString("WORKER_DESIGNATION", null)?.ifBlank { null }
+        if (!prefDesignation.isNullOrBlank()) {
+            loggedInWorkerDesignation = prefDesignation
+        }
+        val prefTally = userPrefs.getString("WORKER_TALLY_NO", null)?.ifBlank { null }
+        if (!prefTally.isNullOrBlank()) {
+            loggedInWorkerTallyNo = prefTally
+        }
+
         val supervisorName = userPrefs.getString("SUPERVISOR_NAME", "") ?: ""
         val supervisorPhone = userPrefs.getString("SUPERVISOR_PHONE", "") ?: ""
         val weeklyOff = userPrefs.getString("WEEKLY_OFF_DAY", "Friday") ?: "Friday"
@@ -636,6 +667,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val displayTally = if (loggedInWorkerTallyNo.isNotEmpty()) loggedInWorkerTallyNo else loggedInWorkerId
         tvHomeTallyNo?.text = "Tally No. $displayTally"
         updatePayrollDisplay()
+        updateHoursWorkedDisplay()
 
         tvProfileName?.text = loggedInWorkerName
 
@@ -656,9 +688,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         flProfileAvatar?.backgroundTintList = ColorStateList.valueOf(googleColors[colorIndex])
         tvProfileTallyNo?.text = "ID: $displayTally"
         tvProfileDepartment?.text = if (loggedInWorkerDesignation.isNotEmpty()) loggedInWorkerDesignation else "Field Worker"
-        if (loggedInWorkerPhone.isNotEmpty()) {
-            tvProfilePhone?.text = loggedInWorkerPhone
-        }
+        tvProfilePhone?.text = if (loggedInWorkerPhone.isNotEmpty()) loggedInWorkerPhone else "—"
 
         tvProfileSupervisor?.text = if (supervisorName.isNotEmpty()) {
             if (supervisorPhone.isNotEmpty()) "$supervisorName ($supervisorPhone)" else supervisorName
@@ -934,8 +964,22 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     val tvTime = itemView.findViewById<TextView>(R.id.tvAuditTimestamp)
 
                     tvType?.text = rec.eventType.uppercase()
-                    tvJob?.text = rec.jobId ?: "WORKER"
-                    tvCoords?.text = "${rec.latitude}, ${rec.longitude}"
+
+                    val matchingJob = liveJobs.find { it.jobId.equals(rec.jobId, ignoreCase = true) }
+                    val jobLabel = when {
+                        matchingJob != null -> matchingJob.jobTitle ?: "Worksite"
+                        rec.jobId.equals("ACCOMMODATION", ignoreCase = true) -> "Accommodation Camp"
+                        rec.jobId.isNullOrBlank() -> "Worksite / Camp"
+                        rec.jobId.length > 12 -> "Site #${rec.jobId.take(8)}"
+                        else -> rec.jobId
+                    }
+                    tvJob?.text = jobLabel
+
+                    if (rec.latitude == 0.0 && rec.longitude == 0.0) {
+                        tvCoords?.text = "GPS Pending"
+                    } else {
+                        tvCoords?.text = String.format(Locale.US, "%.5f, %.5f", rec.latitude, rec.longitude)
+                    }
                     tvTime?.text = rec.timestamp.replace("T", " ").take(19)
 
                     if (rec.isSynced) {
@@ -956,9 +1000,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         btnForceSyncDialog?.setOnClickListener {
             btnForceSyncDialog.isEnabled = false
             btnForceSyncDialog.text = "Syncing..."
-            Toast.makeText(context, "Flushing offline storage to server...", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Flushing pending events to server...", Toast.LENGTH_SHORT).show()
 
-            SyncEngine.triggerSync(context) { success ->
+            SyncEngine.triggerSync(context, isForceSync = true) { success, errMsg ->
                 runOnUiThread {
                     btnForceSyncDialog.isEnabled = true
                     btnForceSyncDialog.text = "Force Sync Now"
@@ -966,7 +1010,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     if (success) {
                         Toast.makeText(context, "✓ Offline sync complete! All events delivered.", Toast.LENGTH_SHORT).show()
                     } else {
-                        Toast.makeText(context, "Sync paused (check network connection)", Toast.LENGTH_SHORT).show()
+                        val msg = errMsg ?: "Unable to sync right now. Please check network."
+                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -1100,10 +1145,14 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         btnScheduleViewAll?.setOnClickListener(openWorkAction)
         cardTodaySchedule?.setOnClickListener(openWorkAction)
 
-        // Payroll card is purely an informative summary card; popup on tap removed per user request
-        btnHeroPayroll?.setOnClickListener(null)
-        btnHeroPayroll?.isClickable = false
-        btnHeroPayroll?.isFocusable = false
+        // Payroll card click opens screen-time style monthly analysis
+        val layoutPayrollSection = findViewById<View>(R.id.layoutPayrollSection)
+        val openPayrollAnalysis = View.OnClickListener {
+            showPayrollAnalysisDialog()
+        }
+        layoutPayrollSection?.setOnClickListener(openPayrollAnalysis)
+        btnHeroPayroll?.setOnClickListener(openPayrollAnalysis)
+        btnQuickPayroll?.setOnClickListener(openPayrollAnalysis)
 
         btnMonthDropdown?.setOnClickListener {
             showMonthFilterDialog()
@@ -1118,6 +1167,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         // Tap Sync Badge to trigger immediate sync attempt
         layoutSyncBadge?.setOnClickListener {
             syncAndRefreshServerData(showUserFeedback = true)
+            SyncEngine.triggerSync(this, isForceSync = true)
         }
 
         // Clock In / Clock Out Toggle Button Handler
@@ -1129,36 +1179,125 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
     }
 
+    private fun fetchPayrollData() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val response = ApiClient.apiService.getPayrollList()
+                if (response.isSuccessful) {
+                    val slips = response.body() ?: emptyList()
+                    val json = com.google.gson.Gson().toJson(slips)
+                    getSharedPreferences("GeoPrefs", Context.MODE_PRIVATE)
+                        .edit()
+                        .putString("CACHED_PAYROLL_SLIPS_JSON", json)
+                        .apply()
+                    withContext(Dispatchers.Main) {
+                        cachedPayrollSlips = slips
+                        updatePayrollDisplay()
+                        updateHoursWorkedDisplay()
+                    }
+                } else {
+                    Log.d(TAG, "Payroll fetch returned HTTP ${response.code()}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to fetch payroll from server", e)
+            }
+        }
+    }
+
+    private fun getLastMonthPayrollSlip(): WorkerMobilePayrollSlip? {
+        if (cachedPayrollSlips.isEmpty()) return null
+        val cal = Calendar.getInstance()
+        cal.add(Calendar.MONTH, -1)
+        val lastMonthPeriod = SimpleDateFormat("yyyy-MM", Locale.US).format(cal.time)
+        return cachedPayrollSlips.firstOrNull { it.period == lastMonthPeriod }
+            ?: cachedPayrollSlips.firstOrNull()
+    }
+
+    private fun getCurrentMonthPayrollSlip(): WorkerMobilePayrollSlip? {
+        if (cachedPayrollSlips.isEmpty()) return null
+        val currentPeriod = SimpleDateFormat("yyyy-MM", Locale.US).format(Date())
+        return cachedPayrollSlips.firstOrNull { it.period == currentPeriod }
+    }
+
     private fun updatePayrollDisplay() {
         val tvPayrollPeriodLabel = findViewById<TextView>(R.id.tvPayrollPeriodLabel)
         val tvPayrollAmount = findViewById<TextView>(R.id.tvPayrollAmount)
         val tvPayrollBadge = findViewById<TextView>(R.id.tvPayrollBadge)
+
+        val latestSlip = cachedPayrollSlips.firstOrNull()
+
+        if (latestSlip != null) {
+            val label = if (!latestSlip.monthLabel.isNullOrBlank()) {
+                "${latestSlip.monthLabel} Payroll"
+            } else if (!latestSlip.period.isNullOrBlank()) {
+                "${latestSlip.period} Payroll"
+            } else {
+                "Monthly Payroll"
+            }
+            tvPayrollPeriodLabel?.text = label
+
+            val curr = latestSlip.currency ?: "AED"
+            val net = latestSlip.netPay.toDoubleOrNull()
+            tvPayrollAmount?.text = if (net != null) {
+                String.format(Locale.US, "%s %,.2f", curr, net)
+            } else {
+                "$curr ${latestSlip.netPay}"
+            }
+
+            val statusText = if (latestSlip.status.equals("APPROVED", ignoreCase = true)) {
+                "Approved & Disbursed"
+            } else {
+                latestSlip.status
+            }
+            tvPayrollBadge?.text = "$statusText (${latestSlip.standardHours}h std)"
+        } else {
+            tvPayrollPeriodLabel?.text = "Monthly Payroll"
+            tvPayrollAmount?.text = "Pending Approval"
+            tvPayrollBadge?.text = "Pending server approval"
+        }
+    }
+
+    private fun updateHoursWorkedDisplay() {
         val tvMonthFilterLabel = findViewById<TextView>(R.id.tvMonthFilterLabel)
+        val tvHoursWorkedTimer = findViewById<TextView>(R.id.tvHoursWorkedTimer)
 
         tvMonthFilterLabel?.text = "$activeHoursFilter ∨"
 
-        val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
-        val baseSalaryStr = userPrefs.getString("WORKER_PAYROLL", "32500") ?: "32500"
-        val cleanDigits = baseSalaryStr.filter { it.isDigit() }
-        val baseMonthly = cleanDigits.toDoubleOrNull() ?: 32500.0
-
         when (activeHoursFilter) {
             "Today" -> {
-                tvPayrollPeriodLabel?.text = "Today's Payroll"
-                val dailyWage = (baseMonthly / 26.0).toInt().coerceAtLeast(1000)
-                tvPayrollAmount?.text = String.format(Locale.US, "₹%,d", dailyWage)
-                tvPayrollBadge?.text = "Daily Shift (8h Standard)"
+                val sharedPrefs = getSharedPreferences("GeoAlarmPrefs", Context.MODE_PRIVATE)
+                val totalMillis = getTodayTotalWorkedMillis(sharedPrefs)
+                val totalSeconds = totalMillis / 1000
+                val hrs = totalSeconds / 3600
+                val mins = (totalSeconds % 3600) / 60
+                val secs = totalSeconds % 60
+                tvHoursWorkedTimer?.text = String.format(Locale.US, "%02d:%02d:%02d", hrs, mins, secs)
             }
             "Last Month" -> {
-                tvPayrollPeriodLabel?.text = "Last Month's Payroll"
-                val lastMonthAmount = (baseMonthly * 0.96).toInt()
-                tvPayrollAmount?.text = String.format(Locale.US, "₹%,d", lastMonthAmount)
-                tvPayrollBadge?.text = "Disbursed & Completed"
+                val lastMonthSlip = getLastMonthPayrollSlip()
+                if (lastMonthSlip != null && !lastMonthSlip.workedHours.isNullOrBlank()) {
+                    val hrs = lastMonthSlip.workedHours.toDoubleOrNull()
+                    tvHoursWorkedTimer?.text = if (hrs != null) {
+                        if (hrs % 1.0 == 0.0) "${hrs.toInt()} hrs" else "$hrs hrs"
+                    } else {
+                        "${lastMonthSlip.workedHours} hrs"
+                    }
+                } else {
+                    tvHoursWorkedTimer?.text = "—"
+                }
             }
             else -> { // "This Month"
-                tvPayrollPeriodLabel?.text = "This Month's Payroll"
-                tvPayrollAmount?.text = String.format(Locale.US, "₹%,d", baseMonthly.toInt())
-                tvPayrollBadge?.text = "+12% from last month"
+                val currentSlip = getCurrentMonthPayrollSlip()
+                if (currentSlip != null && !currentSlip.workedHours.isNullOrBlank()) {
+                    val hrs = currentSlip.workedHours.toDoubleOrNull()
+                    tvHoursWorkedTimer?.text = if (hrs != null) {
+                        if (hrs % 1.0 == 0.0) "${hrs.toInt()} hrs" else "$hrs hrs"
+                    } else {
+                        "${currentSlip.workedHours} hrs"
+                    }
+                } else {
+                    tvHoursWorkedTimer?.text = "—"
+                }
             }
         }
     }
@@ -1204,27 +1343,181 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         cardFilterToday.setOnClickListener {
             activeHoursFilter = "Today"
-            updatePayrollDisplay()
-            mainHandler.post(clockTicker)
+            updateHoursWorkedDisplay()
             dialog.dismiss()
         }
 
         cardFilterThisMonth.setOnClickListener {
             activeHoursFilter = "This Month"
-            updatePayrollDisplay()
-            mainHandler.post(clockTicker)
+            updateHoursWorkedDisplay()
             dialog.dismiss()
         }
 
         cardFilterLastMonth.setOnClickListener {
             activeHoursFilter = "Last Month"
-            updatePayrollDisplay()
-            mainHandler.post(clockTicker)
+            updateHoursWorkedDisplay()
             dialog.dismiss()
         }
 
         btnClose.setOnClickListener {
             dialog.dismiss()
+        }
+
+        dialog.show()
+    }
+
+    private fun showPayrollAnalysisDialog() {
+        val dialog = BottomSheetDialog(this)
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_payroll_analysis, null)
+        dialog.setContentView(dialogView)
+
+        val ivClose = dialogView.findViewById<ImageView>(R.id.ivClosePayrollDialog)
+        val hsvMonths = dialogView.findViewById<HorizontalScrollView>(R.id.hsvPayrollMonths)
+        val llMonthsContainer = dialogView.findViewById<LinearLayout>(R.id.llPayrollMonthsContainer)
+        val layoutEmptyState = dialogView.findViewById<LinearLayout>(R.id.layoutPayrollEmptyState)
+        val scrollContent = dialogView.findViewById<ScrollView>(R.id.scrollPayrollContent)
+
+        // Hero views
+        val tvStatusBadge = dialogView.findViewById<TextView>(R.id.tvAnalysisStatusBadge)
+        val tvNetPay = dialogView.findViewById<TextView>(R.id.tvAnalysisNetPay)
+        val tvGrossAndDed = dialogView.findViewById<TextView>(R.id.tvAnalysisGrossAndDed)
+        val tvPeriodRange = dialogView.findViewById<TextView>(R.id.tvAnalysisPeriodRange)
+
+        // Segmented bar views
+        val viewSegSalary = dialogView.findViewById<View>(R.id.viewSegSalary)
+        val viewSegOt1 = dialogView.findViewById<View>(R.id.viewSegOt1)
+        val viewSegOt2 = dialogView.findViewById<View>(R.id.viewSegOt2)
+        val viewSegDeduction = dialogView.findViewById<View>(R.id.viewSegDeduction)
+        val tvLegendSalary = dialogView.findViewById<TextView>(R.id.tvLegendSalary)
+        val tvLegendOt1 = dialogView.findViewById<TextView>(R.id.tvLegendOt1)
+        val tvLegendOt2 = dialogView.findViewById<TextView>(R.id.tvLegendOt2)
+        val tvLegendDeduction = dialogView.findViewById<TextView>(R.id.tvLegendDeduction)
+
+        // Hours usage views
+        val tvOtTag = dialogView.findViewById<TextView>(R.id.tvAnalysisOtTag)
+        val tvWorkedRatio = dialogView.findViewById<TextView>(R.id.tvAnalysisWorkedRatio)
+        val pbHours = dialogView.findViewById<ProgressBar>(R.id.pbAnalysisHours)
+        val tvBoxStandardHours = dialogView.findViewById<TextView>(R.id.tvBoxStandardHours)
+        val tvBoxWorkedHours = dialogView.findViewById<TextView>(R.id.tvBoxWorkedHours)
+        val tvBoxOtHours = dialogView.findViewById<TextView>(R.id.tvBoxOtHours)
+        val tvBoxLeaveHours = dialogView.findViewById<TextView>(R.id.tvBoxLeaveHours)
+
+        // Detailed statement views
+        val tvRowSalaryPortion = dialogView.findViewById<TextView>(R.id.tvRowSalaryPortion)
+        val tvRowOt1Label = dialogView.findViewById<TextView>(R.id.tvRowOt1Label)
+        val tvRowOt1Amount = dialogView.findViewById<TextView>(R.id.tvRowOt1Amount)
+        val tvRowOt2Label = dialogView.findViewById<TextView>(R.id.tvRowOt2Label)
+        val tvRowOt2Amount = dialogView.findViewById<TextView>(R.id.tvRowOt2Amount)
+        val tvRowMissedDeduction = dialogView.findViewById<TextView>(R.id.tvRowMissedDeduction)
+        val tvRowGrossPay = dialogView.findViewById<TextView>(R.id.tvRowGrossPay)
+        val tvRowNetPay = dialogView.findViewById<TextView>(R.id.tvRowNetPay)
+        val tvRowApprovedAt = dialogView.findViewById<TextView>(R.id.tvRowApprovedAt)
+
+        ivClose?.setOnClickListener {
+            dialog.dismiss()
+        }
+
+        if (cachedPayrollSlips.isEmpty()) {
+            layoutEmptyState?.visibility = View.VISIBLE
+            scrollContent?.visibility = View.GONE
+            hsvMonths?.visibility = View.GONE
+        } else {
+            layoutEmptyState?.visibility = View.GONE
+            scrollContent?.visibility = View.VISIBLE
+            hsvMonths?.visibility = View.VISIBLE
+
+            var selectedSlipIndex = 0
+
+            fun renderSlip(slip: WorkerMobilePayrollSlip) {
+                val curr = slip.currency ?: "AED"
+                val net = slip.netPay.toDoubleOrNull() ?: 0.0
+                val gross = slip.grossPay.toDoubleOrNull() ?: 0.0
+                val salary = slip.salaryPortion.toDoubleOrNull() ?: 0.0
+                val ot1 = slip.ot1Amount.toDoubleOrNull() ?: 0.0
+                val ot2 = slip.ot2Amount.toDoubleOrNull() ?: 0.0
+                val deduction = slip.missedHoursDeduction.toDoubleOrNull() ?: 0.0
+                val stdHours = slip.standardHours.toDoubleOrNull() ?: 0.0
+                val workedHours = slip.workedHours.toDoubleOrNull() ?: 0.0
+                val ot1Hours = slip.ot1Hours.toDoubleOrNull() ?: 0.0
+                val ot2Hours = slip.ot2Hours.toDoubleOrNull() ?: 0.0
+
+                // 1. Hero
+                tvNetPay?.text = String.format(Locale.US, "%s %,.2f", curr, net)
+                tvGrossAndDed?.text = String.format(Locale.US, "Gross: %s %,.2f • Deductions: %s %,.2f", curr, gross, curr, deduction)
+                tvPeriodRange?.text = "Period: ${slip.periodStart} – ${slip.periodEnd}"
+                tvStatusBadge?.text = if (slip.status.equals("APPROVED", ignoreCase = true)) "✓ Approved" else slip.status
+
+                // 2. Screen Time Multi-Color Distribution Bar
+                val totalAmount = Math.max(1.0, salary + ot1 + ot2 + deduction)
+                val wSalary = ((salary / totalAmount) * 100).toFloat().coerceAtLeast(1f)
+                val wOt1 = if (ot1 > 0) ((ot1 / totalAmount) * 100).toFloat().coerceAtLeast(4f) else 0f
+                val wOt2 = if (ot2 > 0) ((ot2 / totalAmount) * 100).toFloat().coerceAtLeast(4f) else 0f
+                val wDed = if (deduction > 0) ((deduction / totalAmount) * 100).toFloat().coerceAtLeast(4f) else 0f
+
+                viewSegSalary?.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, wSalary)
+                viewSegOt1?.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, wOt1)
+                viewSegOt2?.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, wOt2)
+                viewSegDeduction?.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, wDed)
+
+                tvLegendSalary?.text = String.format(Locale.US, "Basic: %s %,.2f", curr, salary)
+                tvLegendOt1?.text = String.format(Locale.US, "OT1: +%s %,.2f", curr, ot1)
+                tvLegendOt2?.text = String.format(Locale.US, "OT2: +%s %,.2f", curr, ot2)
+                tvLegendDeduction?.text = String.format(Locale.US, "Missed: -%s %,.2f", curr, deduction)
+
+                // 3. Hours & Attendance Usage
+                tvWorkedRatio?.text = String.format(Locale.US, "%.2f hrs worked (%.2fh standard)", workedHours, stdHours)
+                val overtimeHoursTotal = ot1Hours + ot2Hours
+                tvOtTag?.text = if (overtimeHoursTotal > 0) String.format(Locale.US, "+%.2fh Overtime", overtimeHoursTotal) else "Standard Met"
+                val progressVal = if (stdHours > 0) ((workedHours / stdHours) * 100).toInt().coerceIn(0, 100) else 100
+                pbHours?.progress = progressVal
+
+                tvBoxStandardHours?.text = String.format(Locale.US, "%.2f hrs", stdHours)
+                tvBoxWorkedHours?.text = String.format(Locale.US, "%.2f hrs", workedHours)
+                tvBoxOtHours?.text = String.format(Locale.US, "+%.2f hrs", overtimeHoursTotal)
+                tvBoxLeaveHours?.text = "${slip.paidLeaveHours} / ${slip.unpaidLeaveHours} hrs"
+
+                // 4. Statement rows
+                tvRowSalaryPortion?.text = String.format(Locale.US, "%s %,.2f", curr, salary)
+                tvRowOt1Label?.text = "Overtime Pay (OT1 - ${slip.ot1Hours}h)"
+                tvRowOt1Amount?.text = String.format(Locale.US, "+%s %,.2f", curr, ot1)
+                tvRowOt2Label?.text = "Overtime Pay (OT2 - ${slip.ot2Hours}h)"
+                tvRowOt2Amount?.text = String.format(Locale.US, "%s %,.2f", curr, ot2)
+                tvRowMissedDeduction?.text = String.format(Locale.US, "-%s %,.2f", curr, deduction)
+                tvRowGrossPay?.text = String.format(Locale.US, "%s %,.2f", curr, gross)
+                tvRowNetPay?.text = String.format(Locale.US, "%s %,.2f", curr, net)
+                tvRowApprovedAt?.text = if (!slip.approvedAt.isNullOrBlank()) "Approved on ${slip.approvedAt}" else "Status: ${slip.status}"
+            }
+
+            fun refreshMonthChips() {
+                llMonthsContainer?.removeAllViews()
+                for ((index, slip) in cachedPayrollSlips.withIndex()) {
+                    val isSelected = index == selectedSlipIndex
+                    val chip = TextView(this).apply {
+                        text = if (!slip.monthLabel.isNullOrBlank()) slip.monthLabel else (slip.period ?: "Month")
+                        textSize = 12f
+                        setTypeface(null, if (isSelected) Typeface.BOLD else Typeface.NORMAL)
+                        setTextColor(if (isSelected) Color.WHITE else Color.parseColor("#475569"))
+                        setBackgroundResource(if (isSelected) R.drawable.bg_chip_selected else R.drawable.bg_chip_unselected)
+                        setPadding(32, 16, 32, 16)
+                        val params = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            marginEnd = 16
+                        }
+                        layoutParams = params
+                        setOnClickListener {
+                            selectedSlipIndex = index
+                            refreshMonthChips()
+                            renderSlip(cachedPayrollSlips[selectedSlipIndex])
+                        }
+                    }
+                    llMonthsContainer?.addView(chip)
+                }
+            }
+
+            refreshMonthChips()
+            renderSlip(cachedPayrollSlips[selectedSlipIndex])
         }
 
         dialog.show()
@@ -1436,21 +1729,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 }
             }
         }
-
-        // View Details Button Toggle expand/collapse
-        val btnMapDetails = findViewById<MaterialButton>(R.id.btnMapWorksiteDetails)
-        val llExpandedDetails = findViewById<LinearLayout>(R.id.llExpandedDetails)
-        btnMapDetails?.setOnClickListener {
-            if (llExpandedDetails != null) {
-                if (llExpandedDetails.visibility == View.VISIBLE) {
-                    llExpandedDetails.visibility = View.GONE
-                    btnMapDetails.text = "View Details"
-                } else {
-                    llExpandedDetails.visibility = View.VISIBLE
-                    btnMapDetails.text = "Hide Details"
-                }
-            }
-        }
     }
 
     private fun renderJobsOnMap(jobs: List<JobItem>) {
@@ -1551,18 +1829,14 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val container = findViewById<LinearLayout>(R.id.llCarouselContainer) ?: return
         container.removeAllViews()
 
-        val bottomCard = findViewById<View>(R.id.cardBottomWorksiteDetail)
         val carouselScroll = findViewById<View>(R.id.hsvWorksitesCarousel)
 
         if (jobs.isEmpty()) {
-            bottomCard?.visibility = View.GONE
             carouselScroll?.visibility = View.GONE
             return
         }
 
-        bottomCard?.visibility = View.VISIBLE
         carouselScroll?.visibility = View.VISIBLE
-        updateBottomCardDetails(jobs.first())
 
         jobs.forEachIndexed { index, job ->
             val cardView = CardView(this).apply {
@@ -1630,43 +1904,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         if (latLng != null) {
             mMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, 16f))
-            updateBottomCardDetails(job)
         }
-    }
-
-    private fun updateBottomCardDetails(job: JobItem?) {
-        val tvTitle = findViewById<TextView>(R.id.tvMapDetailTitle)
-        val tvTime = findViewById<TextView>(R.id.tvMapDetailTime)
-        val tvRole = findViewById<TextView>(R.id.tvMapDetailRole)
-        val tvSupervisor = findViewById<TextView>(R.id.tvMapDetailSupervisor)
-
-        if (job == null) {
-            findViewById<View>(R.id.cardBottomWorksiteDetail)?.visibility = View.GONE
-            return
-        }
-
-        findViewById<View>(R.id.cardBottomWorksiteDetail)?.visibility = View.VISIBLE
-        tvTitle?.text = job.jobTitle ?: job.jobId
-        val start = job.startTime ?: "Shift Start"
-        val end = job.endTime ?: "Shift End"
-        val breakM = job.breakDurationMinutes ?: 60
-        tvTime?.text = "Shift Hours: $start – $end (Break: ${breakM}m)"
-        tvRole?.text = if (!job.address.isNullOrEmpty()) "Location: ${job.address}" else "Geofenced Worksite"
-
-        val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
-        val supervisorName = userPrefs.getString("SUPERVISOR_NAME", "") ?: ""
-        tvSupervisor?.text = if (supervisorName.isNotEmpty()) "Supervisor: $supervisorName" else "Status: Assigned Shift Active"
-
-        val geoPrefs = getSharedPreferences("GeoPrefs", Context.MODE_PRIVATE)
-        val radius = geoPrefs.getInt("GEOFENCE_RADIUS_M", 300)
-        val tvGeofenceStatus = findViewById<TextView>(R.id.tvMapDetailGeofenceStatus)
-        tvGeofenceStatus?.text = "Status: Active Geofence Area (${radius}m)"
-    }
-
-    private fun setupMapDetailsCard() {
-        // Toggle Expanded panel
-        val detailsContainer = findViewById<LinearLayout>(R.id.llExpandedDetails)
-        detailsContainer?.visibility = View.GONE
     }
 
     private fun armJobGeofence(jobId: String, latLng: LatLng, radius: Float) {
@@ -2321,6 +2559,14 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     val userPrefs = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
                     val secPrefs = getSharedPreferences("AppSecurityPrefs", Context.MODE_PRIVATE)
                     val geoPrefs = getSharedPreferences("GeoPrefs", Context.MODE_PRIVATE)
+                    val refreshToken = secPrefs.getString("REFRESH_TOKEN", null)
+                    if (!refreshToken.isNullOrEmpty()) {
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            try {
+                                ApiClient.apiService.logout(MobileRefreshRequest(refreshToken))
+                            } catch (_: Exception) {}
+                        }
+                    }
                     userPrefs.edit().clear().apply()
                     secPrefs.edit().clear().apply()
                     geoPrefs.edit().clear().apply()

@@ -64,11 +64,11 @@
         android:layout_width="48dp"
         android:layout_height="48dp"
         android:layout_marginEnd="20dp"
-        android:layout_marginBottom="16dp"
+        android:layout_marginBottom="90dp"
         app:cardCornerRadius="24dp"
         app:cardElevation="4dp"
         app:cardBackgroundColor="@color/card_bg"
-        app:layout_constraintBottom_toTopOf="@id/cardBottomWorksiteDetail"
+        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
         <ImageView
@@ -77,157 +77,6 @@
             android:layout_gravity="center"
             android:src="@drawable/ic_my_location"
             app:tint="@color/text_primary" />
-    </androidx.cardview.widget.CardView>
-
-    <!-- Bottom Floating Expandable Worksite Detail Card -->
-    <androidx.cardview.widget.CardView
-        android:id="@+id/cardBottomWorksiteDetail"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginHorizontal="16dp"
-        android:layout_marginBottom="80dp"
-        app:cardCornerRadius="20dp"
-        app:cardElevation="6dp"
-        app:cardBackgroundColor="@color/card_bg"
-        app:strokeColor="@color/card_border"
-        app:strokeWidth="1dp"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="18dp">
-
-            <!-- Compact Header (Always Visible) -->
-            <RelativeLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content">
-
-                <TextView
-                    android:id="@+id/tvMapDetailTitle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="No Worksite Selected"
-                    android:textColor="@color/text_primary"
-                    android:textSize="17sp"
-                    android:textStyle="bold"
-                    android:layout_alignParentStart="true"
-                    android:layout_toStartOf="@id/btnMapWorksiteDetails" />
-
-                <TextView
-                    android:id="@+id/tvMapDetailTime"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_below="@id/tvMapDetailTitle"
-                    android:layout_marginTop="2dp"
-                    android:text="Standby"
-                    android:textColor="@color/brand_blue"
-                    android:textSize="13sp"
-                    android:textStyle="bold" />
-
-                <!-- View / Hide Details Button -->
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnMapWorksiteDetails"
-                    android:layout_width="wrap_content"
-                    android:layout_height="38dp"
-                    android:layout_alignParentEnd="true"
-                    android:layout_centerVertical="true"
-                    android:text="View Details"
-                    android:textColor="#FFFFFF"
-                    android:textSize="11sp"
-                    android:textStyle="bold"
-                    android:textAllCaps="false"
-                    app:backgroundTint="@color/brand_blue"
-                    app:cornerRadius="10dp"
-                    app:elevation="0dp" />
-            </RelativeLayout>
-
-            <!-- Expanded Details View (Toggled dynamically in Kotlin) -->
-            <LinearLayout
-                android:id="@+id/llExpandedDetails"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:layout_marginTop="12dp"
-                android:visibility="gone">
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:background="@color/divider"
-                    android:layout_marginBottom="12dp" />
-
-                <!-- Role -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:layout_marginBottom="8dp">
-                    <ImageView
-                        android:layout_width="16dp"
-                        android:layout_height="16dp"
-                        android:src="@drawable/ic_location_pin"
-                        app:tint="@color/text_secondary" />
-                    <TextView
-                        android:id="@+id/tvMapDetailRole"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
-                        android:text="—"
-                        android:textColor="@color/text_primary"
-                        android:textSize="13sp" />
-                </LinearLayout>
-
-                <!-- Supervisor -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:layout_marginBottom="8dp">
-                    <ImageView
-                        android:layout_width="16dp"
-                        android:layout_height="16dp"
-                        android:src="@drawable/ic_person"
-                        app:tint="@color/text_secondary" />
-                    <TextView
-                        android:id="@+id/tvMapDetailSupervisor"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
-                        android:text="Supervisor: —"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="13sp" />
-                </LinearLayout>
-
-                <!-- Status / Geofence Info -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
-                    <ImageView
-                        android:layout_width="16dp"
-                        android:layout_height="16dp"
-                        android:src="@drawable/ic_check_circle"
-                        app:tint="@color/status_green" />
-                    <TextView
-                        android:id="@+id/tvMapDetailGeofenceStatus"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
-                        android:text="Status: Active Geofence Area"
-                        android:textColor="@color/status_green_text"
-                        android:textSize="13sp"
-                        android:textStyle="bold" />
-                </LinearLayout>
-            </LinearLayout>
-
-        </LinearLayout>
     </androidx.cardview.widget.CardView>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

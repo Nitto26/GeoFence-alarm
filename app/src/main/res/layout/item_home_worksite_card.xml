@@ -17,7 +17,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
-        android:padding="18dp">
+        android:padding="20dp">
 
         <!-- Header: Title and Geofence Pill -->
         <RelativeLayout
@@ -37,20 +37,24 @@
                     android:layout_height="wrap_content"
                     android:text="Worksite Title"
                     android:textColor="#0F172A"
-                    android:textSize="17sp"
+                    android:textSize="18sp"
                     android:textStyle="bold"
-                    android:maxLines="1"
+                    android:maxLines="2"
                     android:ellipsize="end"
+                    android:lineSpacingExtra="3dp"
+                    android:letterSpacing="0.01"
                     tools:text="Electrical Installation - Site A" />
 
                 <TextView
                     android:id="@+id/tvWorksiteCardRole"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
+                    android:layout_marginTop="4dp"
                     android:text="Assigned Task"
                     android:textColor="#64748B"
-                    android:textSize="12sp"
+                    android:textSize="13sp"
+                    android:lineSpacingExtra="2dp"
+                    android:letterSpacing="0.01"
                     tools:text="Primary Electrical Wiring" />
             </LinearLayout>
 
@@ -110,11 +114,13 @@
                 android:id="@+id/tvWorksiteTiming"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
+                android:layout_marginStart="10dp"
                 android:text="08:00 AM - 05:00 PM (Mon-Fri)"
                 android:textColor="#1E293B"
-                android:textSize="13sp"
+                android:textSize="13.5sp"
                 android:textStyle="bold"
+                android:lineSpacingExtra="3dp"
+                android:letterSpacing="0.01"
                 tools:text="08:00 AM - 05:00 PM (Mon-Fri)" />
         </LinearLayout>
 
@@ -122,7 +128,7 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="10dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
@@ -136,10 +142,12 @@
                 android:id="@+id/tvWorksiteSupervisor"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
+                android:layout_marginStart="10dp"
                 android:text="Supervisor: —"
                 android:textColor="#475569"
-                android:textSize="12sp"
+                android:textSize="13sp"
+                android:lineSpacingExtra="3dp"
+                android:letterSpacing="0.01"
                 tools:text="Supervisor: Arun Kumar" />
         </LinearLayout>
 
@@ -147,7 +155,7 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="10dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
@@ -161,10 +169,14 @@
                 android:id="@+id/tvWorksiteCoords"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
+                android:layout_marginStart="10dp"
                 android:text="Location: —"
                 android:textColor="#64748B"
-                android:textSize="12sp"
+                android:textSize="12.5sp"
+                android:maxLines="2"
+                android:ellipsize="end"
+                android:lineSpacingExtra="3dp"
+                android:letterSpacing="0.01"
                 tools:text="Location: 28.6139, 77.2090" />
         </LinearLayout>
 
@@ -173,19 +185,21 @@
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:gravity="bottom">
+            android:gravity="bottom"
+            android:layout_marginTop="14dp">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnCardViewOnMap"
                 android:layout_width="match_parent"
-                android:layout_height="44dp"
+                android:layout_height="46dp"
                 android:text="View Worksite on Map"
                 android:textColor="#FFFFFF"
-                android:textSize="13sp"
+                android:textSize="13.5sp"
                 android:textStyle="bold"
                 android:textAllCaps="false"
+                android:letterSpacing="0.02"
                 app:backgroundTint="#2563EB"
-                app:cornerRadius="12dp"
+                app:cornerRadius="14dp"
                 app:icon="@drawable/ic_map"
                 app:iconTint="#FFFFFF"
                 app:iconGravity="textStart"
